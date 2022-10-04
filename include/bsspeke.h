@@ -46,6 +46,8 @@ typedef struct {
     uint8_t password[256];   // User's password
     size_t password_len;
 
+    uint8_t K_password[32];  // Password-derived secret key
+
     uint8_t server_id[256];  // Server's identifier (eg domain name)
     size_t server_id_len;
 
@@ -110,6 +112,11 @@ bsspeke_server_generate_B(const uint8_t P[32],
 void
 bsspeke_server_get_B(uint8_t B[32],
                      bsspeke_server_ctx *server);
+
+void
+bsspeke_client_generate_hashed_key(uint8_t k[32],
+                                   const uint8_t *msg, size_t msg_len,
+                                   bsspeke_client_ctx *client);
 
 int
 bsspeke_client_generate_P_and_V(uint8_t P[32], uint8_t V[32],

@@ -25,7 +25,6 @@
 #include "minimonocypher.h"
 #include "include/bsspeke.h"
 
-
 enum debug_level {
     LOG_DEBUG,
     LOG_INFO,
@@ -37,19 +36,19 @@ typedef enum debug_level debug_level_t;
 
 //typedef int debug_level_t;
 
+const uint8_t null_byte = 0;
+
 debug_level_t curr_level = LOG_DEBUG;
 
-void debug(debug_level_t level,
-           const char *msg
-) {
+void debug(debug_level_t level, const char *msg)
+{
     //if( level >= curr_level ) {
         puts(msg);
     //}
 }
 
-void print_point(const char *label,
-                 const uint8_t point[32]
-) {
+void print_point(const char *label, const uint8_t point[32])
+{
     printf("%8s:\t[", label);
     int i = 31;
     for(i=31; i >= 0; i--)
@@ -68,10 +67,13 @@ generate_random_bytes(uint8_t *buf, size_t len)
 }
 
 int
-bsspeke_client_init(bsspeke_client_ctx *ctx,
-                    const char* client_id, const size_t client_id_len,
-                    const char* server_id, const size_t server_id_len,
-                    const char* password, const size_t password_len)
+bsspeke_client_init
+    (
+        bsspeke_client_ctx *ctx,
+        const char* client_id, const size_t client_id_len,
+        const char* server_id, const size_t server_id_len,
+        const char* password, const size_t password_len
+    )
 {
     if( client_id_len > 255 ) {
         return -1;
@@ -99,9 +101,12 @@ bsspeke_client_init(bsspeke_client_ctx *ctx,
 }
 
 int
-bsspeke_server_init(bsspeke_server_ctx *ctx,
-                    const char* server_id, const size_t server_id_len,
-                    const char* client_id, const size_t client_id_len)
+bsspeke_server_init
+    (
+        bsspeke_server_ctx *ctx,
+        const char* server_id, const size_t server_id_len,
+        const char* client_id, const size_t client_id_len
+    )
 {
     if( server_id_len > 255 ) {
         return -1;
@@ -123,10 +128,11 @@ bsspeke_server_init(bsspeke_server_ctx *ctx,
 
 void
 bsspeke_client_generate_blind
-(
-    uint8_t blind[32],
-    bsspeke_client_ctx *client
-) {
+    (
+        uint8_t blind[32],
+        bsspeke_client_ctx *client
+    )
+{
     debug(LOG_DEBUG, "Hashing client's password");
     // 1. Hash the client's password, client_id, server_id to a point on the curve
     uint8_t scalar_hash[32];
@@ -203,8 +209,11 @@ bsspeke_server_blind_salt
 }
 
 void
-bsspeke_server_generate_B(const uint8_t P[32],
-                          bsspeke_server_ctx *server)
+bsspeke_server_generate_B
+    (
+        const uint8_t P[32],
+        bsspeke_server_ctx *server
+    )
 {
     // Generate random ephemeral private key b, save it in server->b
     debug(LOG_DEBUG, "Generating ephemeral private key b");
@@ -223,16 +232,22 @@ bsspeke_server_generate_B(const uint8_t P[32],
 }
 
 void
-bsspeke_server_get_B(uint8_t B[32],
-                     bsspeke_server_ctx *server)
+bsspeke_server_get_B
+    (
+        uint8_t B[32],
+        bsspeke_server_ctx *server
+    )
 {
     memcpy(B, server->B, 32);
 }
 
 int
-bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
-                                           uint32_t phf_blocks, uint32_t phf_iterations,
-                                           bsspeke_client_ctx *client)
+bsspeke_client_generate_master_key
+    (
+        const uint8_t blind_salt[32],
+        uint32_t phf_blocks, uint32_t phf_iterations,
+        bsspeke_client_ctx *client
+    )
 {
     // Sanity checks first, before we do any work
     if( phf_blocks < BSSPEKE_ARGON2_MIN_PHF_BLOCKS ) {
@@ -261,7 +276,7 @@ bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
-        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL between the client id and the password
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL between the client id and the password
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
@@ -269,18 +284,52 @@ bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
     }
     print_point("phf_salt", phf_salt);
 
-    debug(LOG_DEBUG, "Running the PHF to generate p and v");
-    uint8_t password_hash[64];
+    debug(LOG_DEBUG, "Running the PHF to generate K_password");
     void *work_area;
     if ((work_area = malloc(phf_blocks * 1024)) == NULL) {
         return -1;
     }
-    crypto_argon2i(password_hash, 64, work_area,
+    crypto_argon2i(client->K_password, 32, work_area,
                    phf_blocks, phf_iterations,
                    client->password, client->password_len,
                    phf_salt, 32);
     free(work_area);
+    return 0;
+}
 
+void
+bsspeke_client_generate_hashed_key
+    (
+        uint8_t k[32],
+        const uint8_t *msg, size_t msg_len,
+        bsspeke_client_ctx *client
+    )
+{
+    crypto_blake2b_ctx hash_ctx;
+    crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+    crypto_blake2b_update(&hash_ctx, client->K_password, 32);
+    crypto_blake2b_update(&hash_ctx, msg, msg_len);
+    crypto_blake2b_update(&hash_ctx, &null_byte, 1);
+    crypto_blake2b_final(&hash_ctx, k);
+}
+
+
+int
+bsspeke_client_generate_keys_from_password
+    (
+        const uint8_t blind_salt[32],
+        uint32_t phf_blocks, uint32_t phf_iterations,
+        bsspeke_client_ctx *client
+    )
+{
+   /*
+    crypto_argon2i(password_hash, 64, work_area,
+                   phf_blocks, phf_iterations,
+                   client->password, client->password_len,
+                   phf_salt, 32);
+    */
+
+    /*
     // p || v = pwKdf(password, BlindSalt, idC, idS, settings)
     uint8_t *tmp_p = &(password_hash[0]);
     uint8_t *tmp_v = &(password_hash[32]);
@@ -289,7 +338,19 @@ bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
 
     memcpy(client->p, tmp_p, 32);
     memcpy(client->v, tmp_v, 32);
-    crypto_wipe(password_hash, 64);
+    //crypto_wipe(password_hash, 64);
+    */
+
+    if( bsspeke_client_generate_master_key(blind_salt, phf_blocks, phf_iterations, client) != 0) {
+        return -1;
+    }
+
+    const char *p_modifier = "curve_point_p";
+    const char *v_modifier = "private_key_v";
+
+    bsspeke_client_generate_hashed_key(client->p, (const uint8_t *) p_modifier, strlen(p_modifier), client);
+    bsspeke_client_generate_hashed_key(client->v, (const uint8_t *) v_modifier, strlen(v_modifier), client);
+    crypto_x25519_clamp(client->v);
 
     print_point("p", client->p);
     print_point("v", client->v);
@@ -331,10 +392,13 @@ bsspeke_client_generate_P_and_V
 
 
 int
-bsspeke_client_generate_A(const uint8_t blind_salt[32],
-                          uint32_t phf_blocks, uint32_t phf_iterations,
-                          bsspeke_client_ctx *client
-) {
+bsspeke_client_generate_A
+    (
+        const uint8_t blind_salt[32],
+        uint32_t phf_blocks, uint32_t phf_iterations,
+        bsspeke_client_ctx *client
+    )
+{
     int rc = bsspeke_client_generate_keys_from_password(blind_salt,
                                                         phf_blocks, phf_iterations,
                                                         client);
@@ -364,21 +428,27 @@ bsspeke_client_generate_A(const uint8_t blind_salt[32],
 }
 
 void
-bsspeke_client_get_A(uint8_t A[32],
-                     bsspeke_client_ctx *client)
+bsspeke_client_get_A
+    (
+        uint8_t A[32],
+        bsspeke_client_ctx *client
+    )
 {
     memcpy(A, client->A, 32);
 }
 
 void
-bsspeke_client_derive_shared_key(const uint8_t B[32],
-                                 bsspeke_client_ctx *client)
+bsspeke_client_derive_shared_key
+    (
+        const uint8_t B[32],
+        bsspeke_client_ctx *client
+    )
 {
     // Compute the two Diffie-Hellman shared secrets 
     debug(LOG_DEBUG, "Computing Diffie-Hellman shared secrets");
-    printf("%8s:\t[%s]\n", "client", client->client_id);
+    printf("%8s:\t[%s]\n",  "client", client->client_id);
     printf("%8s:\t[%zu]\n", "length", client->client_id_len);
-    printf("%8s:\t[%s]\n", "server", client->server_id);
+    printf("%8s:\t[%s]\n",  "server", client->server_id);
     printf("%8s:\t[%zu]\n", "length", client->server_id_len);
     print_point("A", client->A);
     print_point("B", B);
@@ -399,11 +469,11 @@ bsspeke_client_derive_shared_key(const uint8_t B[32],
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
-        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL after the client id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
-        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL after the server id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, client->A, 32);
         crypto_blake2b_update(&hash_ctx, B, 32);
         crypto_blake2b_update(&hash_ctx, a_B, 32);
@@ -414,8 +484,11 @@ bsspeke_client_derive_shared_key(const uint8_t B[32],
 }
 
 void
-bsspeke_client_generate_verifier(uint8_t client_verifier[32],
-                                 bsspeke_client_ctx *client)
+bsspeke_client_generate_verifier
+    (
+        uint8_t client_verifier[32],
+        bsspeke_client_ctx *client
+    )
 {
     // Hash k and the client modifier to get our verifier, save it in client_verifier
     debug(LOG_DEBUG, "Hashing K_c and modifier to get our verifier");
@@ -432,10 +505,13 @@ bsspeke_client_generate_verifier(uint8_t client_verifier[32],
 }
 
 void
-bsspeke_server_derive_shared_key(const uint8_t A[32],
-                                 const uint8_t V[32],
-                                 bsspeke_server_ctx *server
-) {
+bsspeke_server_derive_shared_key
+    (
+        const uint8_t A[32],
+        const uint8_t V[32],
+        bsspeke_server_ctx *server
+    )
+{
     // Compute the two Diffie-Hellman shared secrets
     debug(LOG_DEBUG, "Computing Diffie-Hellman shared secrets");
     // DH shared secret from b * A
@@ -461,11 +537,11 @@ bsspeke_server_derive_shared_key(const uint8_t A[32],
         crypto_blake2b_update(&hash_ctx,
                               server->client_id,
                               server->client_id_len);
-        crypto_blake2b_update(&hash_ctx, "\0", 1);    // Insert a NULL after the client id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1);    // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               server->server_id,
                               server->server_id_len);
-        crypto_blake2b_update(&hash_ctx, "\0", 1);    // Insert a NULL after the server id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1);    // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, A, 32);
         crypto_blake2b_update(&hash_ctx, server->B, 32);
         crypto_blake2b_update(&hash_ctx, b_A, 32);
@@ -476,9 +552,12 @@ bsspeke_server_derive_shared_key(const uint8_t A[32],
 }
 
 int
-bsspeke_server_verify_client(const uint8_t client_verifier[32],
-                             bsspeke_server_ctx *server
-) {
+bsspeke_server_verify_client
+    (
+        const uint8_t client_verifier[32],
+        bsspeke_server_ctx *server
+    )
+{
 
     // Check that the client's hash is correct
     // Compute H( k || VERIFY_CLIENT_MODIFIER )
@@ -507,9 +586,12 @@ bsspeke_server_verify_client(const uint8_t client_verifier[32],
 }
 
 void
-bsspeke_server_generate_verifier(uint8_t server_verifier[32],
-                                 bsspeke_server_ctx *server
-) {
+bsspeke_server_generate_verifier
+    (
+        uint8_t server_verifier[32],
+        bsspeke_server_ctx *server
+    )
+{
     // Compute our own verifier H( k || VERIFY_SERVER_MODIFIER ), save it in server_verifier
     debug(LOG_DEBUG, "Computing server verifier hash");
     {
@@ -525,9 +607,12 @@ bsspeke_server_generate_verifier(uint8_t server_verifier[32],
 }
 
 int
-bsspeke_client_verify_server(const uint8_t server_verifier[32],
-                             const bsspeke_client_ctx *client
-) {
+bsspeke_client_verify_server
+    (
+        const uint8_t server_verifier[32],
+        const bsspeke_client_ctx *client
+    )
+{
     // Compute our own version of the server's verifier hash
     debug(LOG_DEBUG, "Verifying hash from the server");
     uint8_t my_server_verifier[32];
