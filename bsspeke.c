@@ -160,15 +160,14 @@ bsspeke_client_generate_blind
     //    * Then use the inverse of 1/r as `r`
     //  FIXME: On second thought, monocypher seems to handle all of this complexity for us.  Let's see what happens if we just do things the straightforward way for now...
     debug(LOG_DEBUG, "Generating random blind `r`");
-    //arc4random_buf(client->r, 32);
     generate_random_bytes(client->r, 32);
     print_point("r", client->r);
     debug(LOG_DEBUG, "Clamping r");
     crypto_x25519_clamp(client->r);
     print_point("r", client->r);
 
-    debug(LOG_DEBUG, "Multiplying curve point by r");
     // 3. Multiply our curve point by r
+    debug(LOG_DEBUG, "Multiplying curve point by r");
     crypto_x25519_scalarmult(blind, client->r, curve_point, 256);
     print_point("blind", blind);
     debug(LOG_DEBUG, "Done");
@@ -184,15 +183,6 @@ bsspeke_server_blind_salt
         const uint8_t *salt, const size_t salt_len
     )
 {
-    /*
-    // FIXME This function no longer generates its own salt!
-    //       We MUST do this before calling the function!!!
-    // We're setting up a new account
-    // So we have to create a new random salt for the user
-    debug(LOG_DEBUG, "Generating new salt");
-    salt_len = 32;
-    generate_random_bytes(user_info->salt, user_info->salt_len);
-    */
     print_point("salt", salt);
 
     // Hash the salt
@@ -205,6 +195,7 @@ bsspeke_server_blind_salt
     // Use clamp() to ensure we stay on the curve in the multiply below
     crypto_x25519_clamp(H_salt);
     print_point("H_salt", H_salt);
+
     // Multiply H(salt) by blind, save into blind_salt
     debug(LOG_DEBUG, "Multiplying H_salt by the user's blind");
     crypto_x25519_scalarmult(blind_salt, H_salt, blind, 256);
@@ -217,7 +208,6 @@ bsspeke_server_generate_B(const uint8_t P[32],
 {
     // Generate random ephemeral private key b, save it in server->b
     debug(LOG_DEBUG, "Generating ephemeral private key b");
-    //arc4random_buf(server->b, 32);
     generate_random_bytes(server->b, 32);
     crypto_x25519_clamp(server->b);
     print_point("b", server->b);
@@ -225,7 +215,7 @@ bsspeke_server_generate_B(const uint8_t P[32],
     debug(LOG_DEBUG, "Using user's base point P");
     print_point("P", P);
 
-    // Compute public key B = b * P, save it in msg2->B
+    // Compute public key B = b * P, save it in B
     debug(LOG_DEBUG, "Computing ephemeral public key B = b * P");
     crypto_x25519_scalarmult(server->B, server->b, P, 256);
     print_point("B", server->B);
@@ -246,11 +236,11 @@ bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
 {
     // Sanity checks first, before we do any work
     if( phf_blocks < BSSPEKE_ARGON2_MIN_PHF_BLOCKS ) {
-        debug(LOG_ERROR, "Requested PHF blocks below the minimum");
+        debug(LOG_ERROR, "Requested PHF blocks is below the minimum");
         return -1;
     }
     if( phf_iterations < BSSPEKE_ARGON2_MIN_PHF_ITERATIONS ) {
-        debug(LOG_ERROR, "Requested PHF iterations below the minimum");
+        debug(LOG_ERROR, "Requested PHF iterations is below the minimum");
         return -1;
     }
 
@@ -271,6 +261,7 @@ bsspeke_client_generate_keys_from_password(const uint8_t blind_salt[32],
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
+        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL between the client id and the password
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
@@ -364,7 +355,7 @@ bsspeke_client_generate_A(const uint8_t blind_salt[32],
     generate_random_bytes(client->a, 32);
     crypto_x25519_clamp(client->a);
     print_point("a", client->a);
-    // Generate the ephemeral public key A = a * P, store it in msg3->A
+    // Generate the ephemeral public key A = a * P, store it in A
     debug(LOG_DEBUG, "Generating ephemeral public key A = a * P");
     crypto_x25519_scalarmult(client->A, client->a, P, 256);
     print_point("A", client->A);
@@ -408,9 +399,11 @@ bsspeke_client_derive_shared_key(const uint8_t B[32],
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
+        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
+        crypto_blake2b_update(&hash_ctx, "\0", 1);  // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, client->A, 32);
         crypto_blake2b_update(&hash_ctx, B, 32);
         crypto_blake2b_update(&hash_ctx, a_B, 32);
@@ -424,7 +417,7 @@ void
 bsspeke_client_generate_verifier(uint8_t client_verifier[32],
                                  bsspeke_client_ctx *client)
 {
-    // Hash k and the client modifier to get our verifier, save it in msg3->client_verifier
+    // Hash k and the client modifier to get our verifier, save it in client_verifier
     debug(LOG_DEBUG, "Hashing K_c and modifier to get our verifier");
     {
         crypto_blake2b_ctx hash_ctx;
@@ -468,9 +461,11 @@ bsspeke_server_derive_shared_key(const uint8_t A[32],
         crypto_blake2b_update(&hash_ctx,
                               server->client_id,
                               server->client_id_len);
+        crypto_blake2b_update(&hash_ctx, "\0", 1);    // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               server->server_id,
                               server->server_id_len);
+        crypto_blake2b_update(&hash_ctx, "\0", 1);    // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, A, 32);
         crypto_blake2b_update(&hash_ctx, server->B, 32);
         crypto_blake2b_update(&hash_ctx, b_A, 32);
@@ -501,7 +496,7 @@ bsspeke_server_verify_client(const uint8_t client_verifier[32],
     print_point("client's", client_verifier);
     print_point("mine", my_client_verifier);
 
-    // Compare vs msg3->client_verifier
+    // Compare vs client_verifier
     if( crypto_verify32(client_verifier, my_client_verifier) != 0 ) {
         debug(LOG_ERROR, "Client's verifier doesn't match!");
         return -1;

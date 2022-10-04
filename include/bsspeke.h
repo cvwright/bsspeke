@@ -38,47 +38,47 @@ extern "C" {
 #define BSSPEKE_ARGON2_MIN_PHF_BLOCKS 100000
 #define BSSPEKE_ARGON2_MIN_PHF_ITERATIONS 3
 
-//typedef unsigned char uint8_t;
-
 typedef struct {
-    // Login credentials
-    uint8_t client_id[256];
+
+    uint8_t client_id[256];  // Client's identifier (eg Matrix user_id)
     size_t client_id_len;
-    uint8_t password[256];
+
+    uint8_t password[256];   // User's password
     size_t password_len;
-    // Server identifier
-    uint8_t server_id[256];
+
+    uint8_t server_id[256];  // Server's identifier (eg domain name)
     size_t server_id_len;
-    // Random number to blind the password in the OPRF
-    uint8_t r[32];
-    // Server's ephemeral public key
-    uint8_t B[32];
-    // Ephemeral keys
-    uint8_t a[32];
-    uint8_t A[32];
-    // Long term keys
-    uint8_t v[32];
+
+    uint8_t r[32];           // Random number to blind the password in the OPRF
+
+    uint8_t B[32];           // Server's ephemeral public key
+
+    uint8_t a[32];           // Ephemeral private key
+    uint8_t A[32];           // Ephemeral public key
+
+    uint8_t v[32];           // Long term keys
     uint8_t p[32];
-    // Session key
-    uint8_t K_c[32];
+
+    uint8_t K_c[32];         // Session key
+
 } bsspeke_client_ctx;
 
+
 typedef struct {
-    uint8_t server_id[256];    // Server's identifier (eg domain name)
+
+    uint8_t server_id[256];  // Server's identifier (eg domain name)
     size_t server_id_len;
 
-    uint8_t client_id[256];    // Client's identifier (eg Matrix user_id)
+    uint8_t client_id[256];  // Client's identifier (eg Matrix user_id)
     size_t client_id_len;
 
-    //uint8_t P[32];         // Base point for the user
-    //uint8_t V[32];         // User's long-term public key
-
-    uint8_t b[32];         // Ephemeral private key
-    uint8_t B[32];         // Ephemeral public key
+    uint8_t b[32];           // Ephemeral private key
+    uint8_t B[32];           // Ephemeral public key
     
-    uint8_t A[32];         // Client's ephemeral public key
+    uint8_t A[32];           // Client's ephemeral public key
 
-    uint8_t K_s[32];       // Session key
+    uint8_t K_s[32];         // Session key
+
 } bsspeke_server_ctx;
 
 
