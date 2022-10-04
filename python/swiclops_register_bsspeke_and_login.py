@@ -225,7 +225,10 @@ def login(server, username, password):
     print("Blind (base64) = [%s]" % blind_base64)
 
     body = {
-        "username": username,
+        "identifier": {
+            "type": "m.id.user",
+            "user": user_id
+        },
         "auth": {
             "type": "m.login.bsspeke-ecc.oprf",
             "curve": curve,
@@ -266,7 +269,10 @@ def login(server, username, password):
     verifier = binascii.b2a_base64(verifier_bytes, newline=False).decode('utf-8')
 
     body = {
-        "username": username,
+        "identifier": {
+            "type": "m.id.user",
+            "user": user_id
+        },
         "auth": {
             "type": "m.login.bsspeke-ecc.verify",
             "A": A,
