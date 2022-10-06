@@ -50,7 +50,6 @@ for flow in flows:
 # Request 2: Registration token ########################################
 print("\n\nRequest 2: Registration token\n")
 body = {
-    "username": username,
     "auth": {
         "type": "m.login.registration_token",
         "token": "0000-1111-2222-4444",
@@ -67,7 +66,6 @@ print("Got completed stages: ", completed)
 # Request 3: Terms of service ##########################################
 print("\n\nRequest 3: Terms of service\n")
 body = {
-    "username": username,
     "auth": {
         "type": "m.login.terms",
         "session": session_id
@@ -78,13 +76,12 @@ print("Got status: %d" % r3.status_code)
 completed = r3.json().get("completed", [])
 print("Got completed stages: ", completed)
 
-# Request 4: Request email token #######################################
-print("\n\nRequest 4: Request email token\n")
+# Request 4: Username reservation ######################################
+print("\n\nRequest 4: Username\n")
 body = {
-    "username": username,
     "auth": {
-        "type": "m.enroll.email.request_token",
-        "email": email,
+        "type": "m.enroll.username",
+        "username": username,
         "session": session_id
     }
 }
@@ -93,14 +90,12 @@ print("Got status: %d" % r4.status_code)
 completed = r4.json().get("completed", [])
 print("Got completed stages: ", completed)
 
-# Request 5: Submit email token #######################################
-email_token = input("Enter email token: ")
-print("\n\nRequest 5: Submit email token\n")
+# Request 4: Request email token #######################################
+print("\n\nRequest 5: Request email token\n")
 body = {
-    "username": username,
     "auth": {
-        "type": "m.enroll.email.submit_token",
-        "token": email_token,
+        "type": "m.enroll.email.request_token",
+        "email": email,
         "session": session_id
     }
 }
@@ -109,22 +104,36 @@ print("Got status: %d" % r5.status_code)
 completed = r5.json().get("completed", [])
 print("Got completed stages: ", completed)
 
-# Request 6: Submit password
-print("\n\nRequest 6: Password\n")
+# Request 5: Submit email token #######################################
+email_token = input("Enter email token: ")
+print("\n\nRequest 6: Submit email token\n")
 body = {
-    "username": username,
+    "auth": {
+        "type": "m.enroll.email.submit_token",
+        "token": email_token,
+        "session": session_id
+    }
+}
+r6 = requests.post(url, headers=headers, json=body)
+print("Got status: %d" % r6.status_code)
+completed = r6.json().get("completed", [])
+print("Got completed stages: ", completed)
+
+# Request 6: Submit password
+print("\n\nRequest 7: Password\n")
+body = {
     "auth": {
         "type": "m.enroll.password",
         "new_password": password,
         "session": session_id
     }
 }
-r6 = requests.post(url, headers=headers, json=body)
-print("Got status: %d" % r6.status_code)
-j6 = r6.json()
-completed = j6.get("completed", [])
+r7 = requests.post(url, headers=headers, json=body)
+print("Got status: %d" % r7.status_code)
+j7 = r7.json()
+completed = j7.get("completed", [])
 print("Got completed stages: ", completed)
-if r6.status_code != 200:
-    error = j6.get("error", "???")
-    errcode = j6.get("errcode", "???")
+if r7.status_code != 200:
+    error = j7.get("error", "???")
+    errcode = j7.get("errcode", "???")
     print("Got error response: %s %s" % (errcode, error))
