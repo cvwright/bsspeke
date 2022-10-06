@@ -40,7 +40,6 @@ def register(server, username, password, email):
     # Request 2: Registration token ########################################
     print("\n\nRequest 2: Registration token\n")
     body = {
-        "username": username,
         "auth": {
             "type": "m.login.registration_token",
             "token": "0000-1111-2222-4444",
@@ -57,7 +56,6 @@ def register(server, username, password, email):
     # Request 3: Terms of service ##########################################
     print("\n\nRequest 3: Terms of service\n")
     body = {
-        "username": username,
         "auth": {
             "type": "m.login.terms",
             "session": session_id
@@ -70,32 +68,33 @@ def register(server, username, password, email):
     print("Got completed stages: ", completed)
     print("Got response: ", json.dumps(j3, indent=4))
 
+    # Request 4: Terms of service ##########################################
+    print("\n\nRequest 4: Claim username\n")
+    body = {
+        "auth": {
+            "type": "m.enroll.username",
+            "session": session_id,
+            "username": username
+        }
+    }
+    r4 = requests.post(url, headers=headers, json=body)
+    print("Got status: %d" % r4.status_code)
+    j4 = r4.json()
+    completed = j4.get("completed", [])
+    print("Got completed stages: ", completed)
+    print("Got response: ", json.dumps(j4, indent=4))
+
+
+
     require_email = True
     if require_email:
 
-        # Request 4: Request email token #######################################
-        print("\n\nRequest 4: Request email token\n")
+        # Request 5: Request email token #######################################
+        print("\n\nRequest 5: Request email token\n")
         body = {
-            "username": username,
             "auth": {
                 "type": "m.enroll.email.request_token",
                 "email": email,
-                "session": session_id
-            }
-        }
-        r4 = requests.post(url, headers=headers, json=body)
-        print("Got status: %d" % r4.status_code)
-        completed = r4.json().get("completed", [])
-        print("Got completed stages: ", completed)
-
-        # Request 5: Submit email token #######################################
-        email_token = input("Enter email token: ")
-        print("\n\nRequest 5: Submit email token\n")
-        body = {
-            "username": username,
-            "auth": {
-                "type": "m.enroll.email.submit_token",
-                "token": email_token,
                 "session": session_id
             }
         }
@@ -104,8 +103,23 @@ def register(server, username, password, email):
         completed = r5.json().get("completed", [])
         print("Got completed stages: ", completed)
 
-    # Request 6: BS-SPEKE OPRF
-    print("\n\nRequest 6: BS-SPEKE OPRF\n")
+        # Request 6: Submit email token #######################################
+        email_token = input("Enter email token: ")
+        print("\n\nRequest 6: Submit email token\n")
+        body = {
+            "auth": {
+                "type": "m.enroll.email.submit_token",
+                "token": email_token,
+                "session": session_id
+            }
+        }
+        r6 = requests.post(url, headers=headers, json=body)
+        print("Got status: %d" % r6.status_code)
+        completed = r6.json().get("completed", [])
+        print("Got completed stages: ", completed)
+
+    # Request 7: BS-SPEKE OPRF
+    print("\n\nRequest 7: BS-SPEKE OPRF\n")
     client = BSSpeke.Client(user_id, domain, password)
     client_id = client.get_client_id()
     blind = client.generate_blind()
@@ -118,7 +132,6 @@ def register(server, username, password, email):
     print("Blind (base64) = [%s]" % blind_base64)
 
     body = {
-        "username": username,
         "auth": {
             "type": "m.enroll.bsspeke-ecc.oprf",
             "curve": curve,
@@ -126,22 +139,22 @@ def register(server, username, password, email):
             "session": session_id
         }
     }
-    r6 = requests.post(url, headers=headers, json=body)
+    r7 = requests.post(url, headers=headers, json=body)
     print("Got status: %d" % r6.status_code)
-    j6 = r6.json()
-    print("Got response: ", json.dumps(j6, indent=4))
-    completed = j6.get("completed", [])
+    j7 = r7.json()
+    print("Got response: ", json.dumps(j7, indent=4))
+    completed = j7.get("completed", [])
     print("Got completed stages: ", completed)
-    r6_params = j6.get("params", {})
-    print("Got params: ", json.dumps(r6_params))
-    if r6.status_code != 401:
-        error = j6.get("error", "???")
-        errcode = j6.get("errcode", "???")
+    r7_params = j7.get("params", {})
+    print("Got params: ", json.dumps(r7_params))
+    if r7.status_code != 401:
+        error = j7.get("error", "???")
+        errcode = j7.get("errcode", "???")
         print("Got error response: %s %s" % (errcode, error))
 
-    # Request 7: BS-SPEKE Save 
-    print("\n\nRequest 7: BS-SPEKE OPRF\n")
-    save_params = j6["params"]["m.enroll.bsspeke-ecc.save"]
+    # Request 8: BS-SPEKE Save 
+    print("\n\nRequest 8: BS-SPEKE OPRF\n")
+    save_params = j7["params"]["m.enroll.bsspeke-ecc.save"]
     blind_salt = save_params["blind_salt"]
     phf_params = {
         "name": "argon2i",
@@ -151,7 +164,6 @@ def register(server, username, password, email):
     P,V = client.generate_P_and_V(base64.b64decode(blind_salt), phf_params)
 
     body = {
-        "username": username,
         "auth": {
             "type": "m.enroll.bsspeke-ecc.save",
             "P": binascii.b2a_base64(P, newline=False).decode('utf-8'),
@@ -160,14 +172,14 @@ def register(server, username, password, email):
             "session": session_id
         }
     }
-    r7 = requests.post(url, headers=headers, json=body)
-    print("Got status: %d" % r7.status_code)
-    j7 = r7.json()
-    completed = j7.get("completed", [])
+    r8 = requests.post(url, headers=headers, json=body)
+    print("Got status: %d" % r8.status_code)
+    j8 = r8.json()
+    completed = j8.get("completed", [])
     print("Got completed stages: ", completed)
-    if r7.status_code != 200:
-        error = j7.get("error", "???")
-        errcode = j7.get("errcode", "???")
+    if r8.status_code != 200:
+        error = j8.get("error", "???")
+        errcode = j8.get("errcode", "???")
         print("Got error response: %s %s" % (errcode, error))
 
 
@@ -250,7 +262,7 @@ def login(server, username, password):
         print("Got error response: %s %s" % (errcode, error))
 
     # Request 3: BS-SPEKE Verify
-    print("\n\nRequest 7: BS-SPEKE Verify\n")
+    print("\n\nRequest 3: BS-SPEKE Verify\n")
     verify_params = j2["params"]["m.login.bsspeke-ecc.verify"]
     blind_salt_str = verify_params["blind_salt"]
     B_str = verify_params["B"]
