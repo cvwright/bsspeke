@@ -14,10 +14,11 @@ import requests
 import random
 import secrets
 
-logged_out_headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json'
-}
+def logged_out_headers():
+    return {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
 
 capable_stages = [
     "m.login.registration_token",
@@ -39,9 +40,19 @@ session_storage = {}
 def do_generic_uia_stage(*args, **kwargs):
     (func, url, headers, body) = args
     auth = kwargs["auth"]
-    json = body.copy()
-    json["auth"] = auth
-    return func(url, headers=headers, json=json)
+    uia_body = body.copy()
+    uia_body["auth"] = auth
+    print("Doing UIA stage with request body =", json.dumps(uia_body, indent=4))
+    response = func(url, headers=headers, json=uia_body)
+    if response.status_code not in [200,401]:
+        try:
+            j = response.json()
+            error = j["error"]
+            errcode = j["errcode"]
+            print("UIA got an error: %s %s" % (errcode, error))
+        except:
+            print("UIA got an error response (HTTP %d)" % response.status_code)
+    return response
 
 
 def do_m_login_registration_token(*args, **kwargs):
@@ -122,7 +133,7 @@ def do_m_enroll_email_submit_token(*args, **kwargs):
 def do_m_enroll_bsspeke_oprf(*args, **kwargs):
     domain = kwargs["domain"]
     user_id = kwargs["user_id"]
-    password = kwargs["password"]
+    password = kwargs.get("new_password", None) or kwargs["password"]
     session = kwargs["session"]
 
     client = BSSpeke.Client(user_id, domain, password)
@@ -294,6 +305,7 @@ def do_uia_request(func, url, headers, body, **kwargs):
     # Otherwise the request seems to have gone through
 
     r = func(url, headers=headers, json=body)
+    print("Got initial response:", r.text)
     selected_flow = None
     while r.status_code == 401:
         print("\n\nWorking on UIA\n")
@@ -338,7 +350,7 @@ def register(**kwargs):
     #registration_token = kwargs["registration_token"]
     path = "/_matrix/client/v3/register"
     url = homeserver + path
-    r = do_uia_request(requests.post, url, logged_out_headers, {}, **kwargs)
+    r = do_uia_request(requests.post, url, logged_out_headers(), {}, **kwargs)
     return r
 
 
@@ -356,8 +368,36 @@ def login(**kwargs):
             "user": user_id,
         }
     }
-    r = do_uia_request(requests.post, url, logged_out_headers, login_body, **kwargs)
+    for key in ["device_id", "initial_device_display_name", "refresh_token"]:
+        if key in kwargs:
+            login_body[key] = kwargs[key]
+
+    # Make sure that we're not trying to log in from an already logged-in session
+    assert "access_token" not in kwargs
+
+    r = do_uia_request(requests.post, url, logged_out_headers(), login_body, **kwargs)
     return r
+
+
+def get_devices(**kwargs):
+    access_token = kwargs["access_token"]
+    homeserver = kwargs["homeserver"]
+    path = "/_matrix/client/v3/devices"
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    get_devices_body = {
+    }
+    r = requests.get(url, headers=headers, json=get_devices_body)
+    #return r
+    assert r.status_code == 200
+
+    j = r.json()
+    assert "devices" in j
+
+    return j["devices"]
 
 
 def whoami(**kwargs):
@@ -368,13 +408,19 @@ def whoami(**kwargs):
     path = "/_matrix/client/v3/account/whoami"
     url = homeserver + path
 
-    headers = logged_out_headers
+    headers = logged_out_headers()
     headers["Authorization"] = "Bearer %s" % access_token
 
     whoami_body = {
     }
     r = requests.get(url, headers=headers, json=whoami_body)
-    return r
+    #return r
+    assert r.status_code == 200
+
+    j = r.json()
+    assert "user_id" in j
+
+    return j["user_id"]
 
 
 def deactivate(**kwargs):
@@ -389,7 +435,7 @@ def deactivate(**kwargs):
     path = "/_matrix/client/v3/account/deactivate"
     url = homeserver + path
 
-    headers = logged_out_headers
+    headers = logged_out_headers()
     headers["Authorization"] = "Bearer %s" % access_token
 
     deactivate_body = {
@@ -397,3 +443,45 @@ def deactivate(**kwargs):
     r = do_uia_request(requests.post, url, headers, deactivate_body, **kwargs)
     return r
 
+
+def delete_devices(devices, **kwargs):
+    homeserver = kwargs["homeserver"]
+    user_id = kwargs["user_id"]
+    access_token = kwargs["access_token"]
+
+    print("\n\n")
+    print("*" * 60)
+    print("Deleting devices for user [%s]" % user_id)
+
+    path = "/_matrix/client/v3/delete_devices"
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    delete_devices_body = {
+        "devices": devices
+    }
+    r = do_uia_request(requests.post, url, headers, delete_devices_body, **kwargs)
+    return r
+
+
+def account_auth(**kwargs):
+    homeserver = kwargs["homeserver"]
+    user_id = kwargs["user_id"]
+    access_token = kwargs["access_token"]
+
+    print("\n\n")
+    print("*" * 60)
+    print("Changing password for user [%s]" % user_id)
+
+    path = "/_matrix/client/v3/account/auth"
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    account_auth_body = {
+    }
+    r = do_uia_request(requests.post, url, headers, account_auth_body, **kwargs)
+    return r
