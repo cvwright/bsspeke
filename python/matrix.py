@@ -305,7 +305,13 @@ def do_uia_request(func, url, headers, body, **kwargs):
     # Otherwise the request seems to have gone through
 
     r = func(url, headers=headers, json=body)
-    print("Got initial response:", r.text)
+    print("Got initial response:")
+    try:
+        j = r.json()
+        print(json.dumps(j, indent=4))
+    except:
+        print(r.text)
+
     selected_flow = None
     while r.status_code == 401:
         print("\n\nWorking on UIA\n")
@@ -444,6 +450,28 @@ def deactivate(**kwargs):
     return r
 
 
+# https://spec.matrix.org/v1.4/client-server-api/#delete_matrixclientv3devicesdeviceid
+def delete_device(device_id, **kwargs):
+    homeserver = kwargs["homeserver"]
+    user_id = kwargs["user_id"]
+    access_token = kwargs["access_token"]
+
+    print("\n\n")
+    print("*" * 60)
+    print("Deleting device [%s] for user [%s]" % (device_id, user_id))
+
+    path = "/_matrix/client/v3/devices/%s" % device_id
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    delete_device_body = {
+    }
+    r = do_uia_request(requests.delete, url, headers, delete_device_body, **kwargs)
+    return r
+
+# https://spec.matrix.org/v1.4/client-server-api/#post_matrixclientv3delete_devices
 def delete_devices(devices, **kwargs):
     homeserver = kwargs["homeserver"]
     user_id = kwargs["user_id"]
