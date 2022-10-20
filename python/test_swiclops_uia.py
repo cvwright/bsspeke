@@ -91,7 +91,8 @@ def test_register_login_deactivate(domain):
     assert device_id_2 != None
 
     print("\n\nDeleting 2nd device")
-    r = matrix.delete_devices([device_id_2], **user_info)
+    #r = matrix.delete_devices([device_id_2], **user_info)
+    r = matrix.delete_device(device_id_2, **user_info)
     assert r.status_code == 200
     print("Successfully deleted devices")
 
