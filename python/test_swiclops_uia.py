@@ -19,13 +19,13 @@ import secrets
 import matrix
 
 
-def test_register_login_deactivate(domain):
+def test_register_login_deactivate(domain, email):
     homeserver = "https://matrix." + domain
 
     username = "test_%04x" % random.getrandbits(16)
     user_id = "@%s:%s" % (username, domain)
     password = secrets.token_hex(12)
-    email = "%s@example.com" % username
+    #email = "%s@example.com" % username
     print("Running test with user id [%s]" % user_id)
 
     user_info = {
@@ -111,4 +111,5 @@ def test_register_login_deactivate(domain):
 
 if __name__ == "__main__":
     domain = sys.argv[1]
-    test_register_login_deactivate(domain)
+    email = sys.argv[2]
+    test_register_login_deactivate(domain, email)
