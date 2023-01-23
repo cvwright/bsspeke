@@ -513,3 +513,111 @@ def account_auth(**kwargs):
     }
     r = do_uia_request(requests.post, url, headers, account_auth_body, **kwargs)
     return r
+
+
+def create_room(**kwargs):
+    # Non-optional kwargs
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+
+    # Optional kwargs
+    name = kwargs.get("name", None)
+    topic = kwargs.get("topic", None)
+    preset = kwargs.get("preset", "private_chat")
+    join_rule = kwargs.get("join_rule", "invite")
+    version = kwargs.get("room_version", None)
+
+    print("\n\n")
+    print("*" * 60)
+    print("Creating room")
+
+    path = "/_matrix/client/v3/createRoom"
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    create_body = {
+        "name": name,
+        "topic": topic,
+        "preset": preset,
+        "room_version": version,
+        "initial_state": [
+            {
+                "type": "m.room.join_rules",
+                "content": {
+                    "join_rule": join_rule
+                }
+            }
+        ],
+    }
+
+    r = requests.post(url, headers=headers, json=create_body)
+
+    assert r.status_code == 200
+
+    j = r.json()
+    return j["room_id"]
+
+
+def knock(**kwargs):
+    # Non-optional kwargs
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+    room_id = kwargs["room_id"]
+
+    # Optional kwargs
+    reason = kwargs.get("reason", None)
+
+    print("\n\n")
+    print("*" * 60)
+    print("Knocking on room %s" % room_id)
+
+    path = "/_matrix/client/v3/rooms/%s/knock" % room_id
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    knock_body = {
+        "reason": reason
+    }
+
+    r = requests.post(url, headers=headers, json=knock_body)
+
+    assert r.status_code == 200
+
+    j = r.json()
+    return j["room_id"]
+
+
+def invite(**kwargs):
+    # Non-optional kwargs
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+    room_id = kwargs["room_id"]
+    user_id = kwargs["user_id"]
+
+    # Optional kwargs
+    reason = kwargs.get("reason", None)
+
+    print("\n\n")
+    print("*" * 60)
+    print("Inviting user %s to room %s" % (user_id, room_id))
+
+    path = "/_matrix/client/v3/rooms/%s/invite" % room_id
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    invite_body = {
+        "user_id": user_id,
+        "reason": reason,
+    }
+
+    r = requests.post(url, headers=headers, json=invite_body)
+
+    assert r.status_code == 200
+
+
