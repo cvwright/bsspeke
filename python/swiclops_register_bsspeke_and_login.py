@@ -68,7 +68,7 @@ def register(server, username, password, email):
     print("Got completed stages: ", completed)
     print("Got response: ", json.dumps(j3, indent=4))
 
-    # Request 4: Terms of service ##########################################
+    # Request 4: Claiming Username ##########################################
     print("\n\nRequest 4: Claim username\n")
     body = {
         "auth": {
