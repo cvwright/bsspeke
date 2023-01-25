@@ -351,12 +351,16 @@ def register(**kwargs):
     domain = kwargs["domain"]
     user_id = kwargs["user_id"]
     password = kwargs["password"]
+    inhibit_login = kwargs.get("inhibit_login", False)
     print("Registering user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
     #email = kwargs["email"]
     #registration_token = kwargs["registration_token"]
     path = "/_matrix/client/v3/register"
     url = homeserver + path
-    r = do_uia_request(requests.post, url, logged_out_headers(), {}, **kwargs)
+    body = {
+        "inhibit_login": inhibit_login,
+    }
+    r = do_uia_request(requests.post, url, logged_out_headers(), body, **kwargs)
     return r
 
 
