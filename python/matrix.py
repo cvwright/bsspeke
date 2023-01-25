@@ -625,3 +625,46 @@ def invite(**kwargs):
     assert r.status_code == 200
 
 
+def sync(**kwargs):
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+
+    sync_token = kwargs.get("sync_token", None)
+    timeout = kwargs.get("sync_timeout", 30000)
+
+    path = "/_matrix/client/v3/sync?timeout=%s" % timeout
+    if sync_token is not None:
+        path += "&since=%s" % sync_token
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    print("Syncing with access token [%s]" % access_token)
+    r = requests.get(url, headers=headers)
+    assert r.status_code == 200
+
+    return r.json()
+
+
+# Call /sync until the function returns True
+def sync_until(func, **kwargs):
+
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+    max_tries = kwargs.get("max_tries", 10)
+
+    sync_token = None
+    tries = 0
+    while True:
+        json_response = sync(homeserver=homeserver, access_token=access_token, sync_token=sync_token)
+        tries += 1
+        print("Testing /sync response")
+        if func(json_response) == True:
+            return json_response
+        elif tries >= max_tries:
+            return None
+        else:
+            sync_token = json_response["next_batch"]
+
+
