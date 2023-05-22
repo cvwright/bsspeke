@@ -24,6 +24,7 @@ capable_stages = [
     "m.login.registration_token",
     "m.enroll.username",
     "m.login.password",
+    "m.login.dummy",
     "m.enroll.password",
     "m.login.terms",
     "m.login.bsspeke-ecc.oprf",
@@ -107,6 +108,13 @@ def do_m_login_password(*args, **kwargs):
     }
     return do_generic_uia_stage(*args, auth=auth)
 
+def do_m_login_dummy(*args, **kwargs):
+    session = kwargs["session"]
+    auth = {
+        "type": "m.login.dummy",
+        "session": session,
+    }
+    return do_generic_uia_stage(*args, auth=auth)
 
 def do_m_enroll_email_request_token(*args, **kwargs):
     email = kwargs["email"]
@@ -255,6 +263,9 @@ def do_uia_stage(*args, **kwargs):
         password = kwargs["password"]
         return do_m_login_password(*args, session=session, password=password)
 
+    elif stage == "m.login.dummy":
+        return do_m_login_dummy(*args, session=session)
+
     elif stage == "m.login.terms":
         return do_m_login_terms(*args, session=session)
 
@@ -350,6 +361,7 @@ def register(**kwargs):
     homeserver = kwargs["homeserver"]
     domain = kwargs["domain"]
     user_id = kwargs["user_id"]
+    username = kwargs["username"]
     password = kwargs["password"]
     inhibit_login = kwargs.get("inhibit_login", False)
     print("Registering user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
@@ -358,6 +370,8 @@ def register(**kwargs):
     path = "/_matrix/client/v3/register"
     url = homeserver + path
     body = {
+        "username": username,
+        "password": password,
         "inhibit_login": inhibit_login,
     }
     r = do_uia_request(requests.post, url, logged_out_headers(), body, **kwargs)
@@ -541,27 +555,36 @@ def create_room(**kwargs):
     headers = logged_out_headers()
     headers["Authorization"] = "Bearer %s" % access_token
 
-    create_body = {
-        "name": name,
-        "topic": topic,
-        "preset": preset,
-        "room_version": version,
-        "initial_state": [
+    create_body = {}
+    if name is not None:
+        create_body["name"] = name
+    if topic is not None:
+        create_body["topic"] = topic
+    if preset is not None:
+        create_body["preset"] = preset
+    if version is not None:
+        create_body["room_version"] = version
+    if join_rule is not None:
+        create_body["initial_state"] = [
             {
                 "type": "m.room.join_rules",
                 "content": {
                     "join_rule": join_rule
                 }
             }
-        ],
-    }
+        ]
 
     r = requests.post(url, headers=headers, json=create_body)
-
-    assert r.status_code == 200
-
-    j = r.json()
-    return j["room_id"]
+    #if r.status_code == 200:
+    #    j = r.json()
+    #    return j["room_id"]
+    #else:
+    #    j = r.json()
+    #    errcode = j.get("errcode", "???")
+    #    error = j.get("error", "unknown")
+    #    print("Matrix error: %s - %s" % (errcode, error))
+    #    return None
+    return r
 
 
 def knock(**kwargs):
@@ -577,7 +600,7 @@ def knock(**kwargs):
     print("*" * 60)
     print("Knocking on room %s" % room_id)
 
-    path = "/_matrix/client/v3/rooms/%s/knock" % room_id
+    path = "/_matrix/client/v3/knock/%s" % room_id
     url = homeserver + path
 
     headers = logged_out_headers()
@@ -588,11 +611,10 @@ def knock(**kwargs):
     }
 
     r = requests.post(url, headers=headers, json=knock_body)
-
-    assert r.status_code == 200
-
-    j = r.json()
-    return j["room_id"]
+    #assert r.status_code == 200
+    #j = r.json()
+    #return j["room_id"]
+    return r
 
 
 def invite(**kwargs):
@@ -621,8 +643,8 @@ def invite(**kwargs):
     }
 
     r = requests.post(url, headers=headers, json=invite_body)
-
-    assert r.status_code == 200
+    #assert r.status_code == 200
+    return r
 
 
 def sync(**kwargs):
@@ -631,10 +653,13 @@ def sync(**kwargs):
 
     sync_token = kwargs.get("sync_token", None)
     timeout = kwargs.get("sync_timeout", 30000)
+    full_state = kwargs.get("full_state", None)
 
     path = "/_matrix/client/v3/sync?timeout=%s" % timeout
     if sync_token is not None:
         path += "&since=%s" % sync_token
+    if full_state is not None and full_state is True:
+        path += "&full_state=true"
     url = homeserver + path
 
     headers = logged_out_headers()
@@ -653,11 +678,12 @@ def sync_until(func, **kwargs):
     homeserver = kwargs["homeserver"]
     access_token = kwargs["access_token"]
     max_tries = kwargs.get("max_tries", 10)
+    full_state = kwargs.get("full_state", False)
 
     sync_token = None
     tries = 0
     while True:
-        json_response = sync(homeserver=homeserver, access_token=access_token, sync_token=sync_token)
+        json_response = sync(homeserver=homeserver, access_token=access_token, sync_token=sync_token, full_state=full_state)
         tries += 1
         print("Testing /sync response")
         if func(json_response) == True:
