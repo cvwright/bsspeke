@@ -127,9 +127,10 @@ bsspeke_server_init
 }
 
 void
-bsspeke_client_generate_blind
+bsspeke_client_generate_blind_from_random
     (
         uint8_t blind[32],
+        const uint8_t random[32],
         bsspeke_client_ctx *client
     )
 {
@@ -161,12 +162,9 @@ bsspeke_client_generate_blind
     print_point("H(pass)", curve_point);
 
     // 2. Generate random r
-    //    * Actually generate 1/r first, and clamp() it
-    //      That way we know it will always lead us back to a point on the curve
-    //    * Then use the inverse of 1/r as `r`
-    //  FIXME: On second thought, monocypher seems to handle all of this complexity for us.  Let's see what happens if we just do things the straightforward way for now...
     debug(LOG_DEBUG, "Generating random blind `r`");
-    generate_random_bytes(client->r, 32);
+    //generate_random_bytes(client->r, 32);
+    memcpy(client->r, random, 32);
     print_point("r", client->r);
     debug(LOG_DEBUG, "Clamping r");
     crypto_x25519_clamp(client->r);
@@ -180,6 +178,19 @@ bsspeke_client_generate_blind
 
     return;
 }
+
+void
+bsspeke_client_generate_blind
+    (
+        uint8_t blind[32],
+        bsspeke_client_ctx *client
+    )
+{
+    uint8_t random[32];
+    generate_random_bytes(random, 32);
+    bsspeke_client_generate_blind_from_random(blind, random, client);
+}
+
 
 void
 bsspeke_server_blind_salt
@@ -209,15 +220,17 @@ bsspeke_server_blind_salt
 }
 
 void
-bsspeke_server_generate_B
+bsspeke_server_generate_B_from_random
     (
         const uint8_t P[32],
+        const uint8_t random[32],
         bsspeke_server_ctx *server
     )
 {
     // Generate random ephemeral private key b, save it in server->b
     debug(LOG_DEBUG, "Generating ephemeral private key b");
-    generate_random_bytes(server->b, 32);
+    //generate_random_bytes(server->b, 32);
+    memcpy(server->b, random, 32);
     crypto_x25519_clamp(server->b);
     print_point("b", server->b);
 
@@ -230,6 +243,19 @@ bsspeke_server_generate_B
     print_point("B", server->B);
 
 }
+
+void
+bsspeke_server_generate_B
+    (
+        const uint8_t P[32],
+        bsspeke_server_ctx *server
+    )
+{
+    uint8_t random[32];
+    generate_random_bytes(random, 32);
+    bsspeke_server_generate_B_from_random(P, random, server);
+}
+
 
 void
 bsspeke_server_get_B
@@ -392,10 +418,11 @@ bsspeke_client_generate_P_and_V
 
 
 int
-bsspeke_client_generate_A
+bsspeke_client_generate_A_from_random
     (
         const uint8_t blind_salt[32],
         uint32_t phf_blocks, uint32_t phf_iterations,
+        const uint8_t random[32],
         bsspeke_client_ctx *client
     )
 {
@@ -416,7 +443,8 @@ bsspeke_client_generate_A
     // Generate a random ephemeral private key a, store it in ctx->a
     debug(LOG_DEBUG, "Generating ephemeral private key a");
     //arc4random_buf(client->a, 32);
-    generate_random_bytes(client->a, 32);
+    //generate_random_bytes(client->a, 32);
+    memcpy(client->a, random, 32);
     crypto_x25519_clamp(client->a);
     print_point("a", client->a);
     // Generate the ephemeral public key A = a * P, store it in A
@@ -425,6 +453,19 @@ bsspeke_client_generate_A
     print_point("A", client->A);
 
     return 0;
+}
+
+int
+bsspeke_client_generate_A
+    (
+        const uint8_t blind_salt[32],
+        uint32_t phf_blocks, uint32_t phf_iterations,
+        bsspeke_client_ctx *client
+    )
+{
+    uint8_t random[32];
+    generate_random_bytes(random, 32);
+    return bsspeke_client_generate_A_from_random(blind_salt, phf_blocks, phf_iterations, random, client);
 }
 
 void
