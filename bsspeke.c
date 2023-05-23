@@ -3,7 +3,7 @@
  *
  * Author: Charles V. Wright <cvwright@futo.org>
  * 
- * Copyright (c) 2022 FUTO Holdings, Inc.
+ * Copyright (c) 2022,2023 FUTO Holdings, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/random.h>
+
+#if defined(EMSCRIPTEN)
+#include "syscall.h"
+#endif
 
 #include "minimonocypher.h"
 #include "include/bsspeke.h"
@@ -59,7 +64,9 @@ void print_point(const char *label, const uint8_t point[32])
 void
 generate_random_bytes(uint8_t *buf, size_t len)
 {
-#ifdef linux
+#if defined(EMSCRIPTEN)
+    getrandom(buf, len, 0);
+#elif defined(__linux__)
     getrandom(buf, len, 0);
 #else
     arc4random_buf(buf, len);
