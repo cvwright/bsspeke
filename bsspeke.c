@@ -3,7 +3,7 @@
  *
  * Author: Charles V. Wright <cvwright@futo.org>
  *
- * Copyright (c) 2022 FUTO Holdings, Inc.
+ * Copyright (c) 2022,2023 FUTO Holdings, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/random.h>
+
+/*
+For Emscripten compilation to Javascript use the following:
+./emcc bsspeke.c minimonocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH
+
+This will export all functions with the macro EMSCRIPTEN_KEEPALIVE, free and
+malloc, and the emscripten ccall. If you want to shorten the list of exported
+functions and the file size, you can remove some macros from function
+definitions.
+*/
+#if defined(EMSCRIPTEN)
 #include "syscall.h"
+#include "emscripten/emscripten.h"
+#endif
 
 #include "minimonocypher.h"
 #include "include/bsspeke.h"
@@ -43,7 +56,9 @@ const uint8_t null_byte = 0;
 
 debug_level_t curr_level = LOG_DEBUG;
 
-
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void debug(debug_level_t level, const char *msg)
 {
     // if( level >= curr_level ) {
@@ -60,16 +75,55 @@ void print_point(const char *label, const uint8_t point[32])
     printf("]\n");
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void generate_random_bytes(uint8_t *buf, size_t len)
 {
-// Changed from LINUX to EMSCRIPTEN (EMSCRIPTEN is default macro for emcc compiler)
-#ifdef EMSCRIPTEN 
+#if defined(EMSCRIPTEN)
+    EM_ASM({
+        var cryptoObj = window.crypto || window.msCrypto;
+        let randArray = new Uint8Array($1);
+        if (cryptoObj && cryptoObj.getRandomValues)
+        {
+            cryptoObj.getRandomValues(randArray);
+            console.log("RandArray: " + randArray + "\n");
+        }
+        else
+        {
+            throw new Error("Your browser does not support WebCrypto!");
+        }
+
+        for (var i = 0; i < randArray.length; i++)
+        {
+            Module.HEAPU8[$0 + i] = randArray[i];
+        }
+    },
+           buf, len);
+
+#elif defined(__linux__)
     getrandom(buf, len, 0);
 #else
     arc4random_buf(buf, len);
 #endif
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+bsspeke_client_ctx *generate_client()
+{
+    bsspeke_client_ctx *client = malloc(sizeof(bsspeke_client_ctx));
+    if (client == NULL)
+    {
+        return NULL;
+    }
+    return client;
+}
+
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_init(
     bsspeke_client_ctx *ctx,
     const char *client_id, const size_t client_id_len,
@@ -104,6 +158,9 @@ int bsspeke_client_init(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_server_init(
     bsspeke_server_ctx *ctx,
     const char *server_id, const size_t server_id_len,
@@ -129,6 +186,9 @@ int bsspeke_server_init(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_client_generate_blind_from_random(
     uint8_t blind[32],
     const uint8_t random[32],
@@ -179,15 +239,28 @@ void bsspeke_client_generate_blind_from_random(
     return;
 }
 
-void bsspeke_client_generate_blind(
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+uint8_t *
+#else
+void
+#endif
+bsspeke_client_generate_blind(
     uint8_t blind[32],
     bsspeke_client_ctx *client)
 {
+    printf("bsspeke_client_generate_blind\n");
     uint8_t random[32];
     generate_random_bytes(random, 32);
     bsspeke_client_generate_blind_from_random(blind, random, client);
+#ifdef EMSCRIPTEN
+    return (uint8_t *)blind;
+#endif
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_blind_salt(
     uint8_t blind_salt[32],
     const uint8_t blind[32],
@@ -212,6 +285,9 @@ void bsspeke_server_blind_salt(
     print_point("blndsalt", blind_salt);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_generate_B_from_random(
     const uint8_t P[32],
     const uint8_t random[32],
@@ -233,6 +309,9 @@ void bsspeke_server_generate_B_from_random(
     print_point("B", server->B);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_generate_B(
     const uint8_t P[32],
     bsspeke_server_ctx *server)
@@ -242,6 +321,9 @@ void bsspeke_server_generate_B(
     bsspeke_server_generate_B_from_random(P, random, server);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_get_B(
     uint8_t B[32],
     bsspeke_server_ctx *server)
@@ -249,6 +331,9 @@ void bsspeke_server_get_B(
     memcpy(B, server->B, 32);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_generate_master_key(
     const uint8_t blind_salt[32],
     uint32_t phf_blocks, uint32_t phf_iterations,
@@ -305,6 +390,9 @@ int bsspeke_client_generate_master_key(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_client_generate_hashed_key(
     uint8_t k[32],
     const uint8_t *msg, size_t msg_len,
@@ -318,6 +406,9 @@ void bsspeke_client_generate_hashed_key(
     crypto_blake2b_final(&hash_ctx, k);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_generate_keys_from_password(
     const uint8_t blind_salt[32],
     uint32_t phf_blocks, uint32_t phf_iterations,
@@ -360,8 +451,15 @@ int bsspeke_client_generate_keys_from_password(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_generate_P_and_V(
+#ifdef EMSCRIPTEN
+    uint8_t *P, uint8_t *V,
+#else
     uint8_t P[32], uint8_t V[32],
+#endif
     const uint8_t blind_salt[32],
     uint32_t phf_blocks, uint32_t phf_iterations,
     bsspeke_client_ctx *client)
@@ -389,6 +487,9 @@ int bsspeke_client_generate_P_and_V(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_generate_A_from_random(
     const uint8_t blind_salt[32],
     uint32_t phf_blocks, uint32_t phf_iterations,
@@ -425,6 +526,9 @@ int bsspeke_client_generate_A_from_random(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_generate_A(
     const uint8_t blind_salt[32],
     uint32_t phf_blocks, uint32_t phf_iterations,
@@ -435,6 +539,9 @@ int bsspeke_client_generate_A(
     return bsspeke_client_generate_A_from_random(blind_salt, phf_blocks, phf_iterations, random, client);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_client_get_A(
     uint8_t A[32],
     bsspeke_client_ctx *client)
@@ -442,6 +549,9 @@ void bsspeke_client_get_A(
     memcpy(A, client->A, 32);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_client_derive_shared_key(
     const uint8_t B[32],
     bsspeke_client_ctx *client)
@@ -485,6 +595,9 @@ void bsspeke_client_derive_shared_key(
     print_point("K_c", client->K_c);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_client_generate_verifier(
     uint8_t client_verifier[32],
     bsspeke_client_ctx *client)
@@ -503,6 +616,9 @@ void bsspeke_client_generate_verifier(
     print_point("client_v", client_verifier);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_derive_shared_key(
     const uint8_t A[32],
     const uint8_t V[32],
@@ -547,6 +663,9 @@ void bsspeke_server_derive_shared_key(
     print_point("K_s", server->K_s);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_server_verify_client(
     const uint8_t client_verifier[32],
     bsspeke_server_ctx *server)
@@ -579,6 +698,9 @@ int bsspeke_server_verify_client(
     return 0;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void bsspeke_server_generate_verifier(
     uint8_t server_verifier[32],
     bsspeke_server_ctx *server)
@@ -597,6 +719,9 @@ void bsspeke_server_generate_verifier(
     print_point("server_v", server_verifier);
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 int bsspeke_client_verify_server(
     const uint8_t server_verifier[32],
     const bsspeke_client_ctx *client)
