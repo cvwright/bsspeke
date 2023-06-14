@@ -2,7 +2,7 @@
  * bsspeke.c - BS-SPEKE over Curve25519
  *
  * Author: Charles V. Wright <cvwright@futo.org>
- * 
+ *
  * Copyright (c) 2022,2023 FUTO Holdings, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -23,14 +23,25 @@
 #include <string.h>
 #include <sys/random.h>
 
+/*
+For Emscripten compilation to Javascript use the following:
+./emcc bsspeke.c minimonocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH
+
+This will export all functions with the macro EMSCRIPTEN_KEEPALIVE, free and
+malloc, and the emscripten ccall. If you want to shorten the list of exported
+functions and the file size, you can remove some macros from function
+definitions.
+*/
 #if defined(EMSCRIPTEN)
 #include "syscall.h"
+#include "emscripten/emscripten.h"
 #endif
 
 #include "minimonocypher.h"
 #include "include/bsspeke.h"
 
-enum debug_level {
+enum debug_level
+{
     LOG_DEBUG,
     LOG_INFO,
     LOG_WARN,
@@ -39,16 +50,19 @@ enum debug_level {
 };
 typedef enum debug_level debug_level_t;
 
-//typedef int debug_level_t;
+// typedef int debug_level_t;
 
 const uint8_t null_byte = 0;
 
 debug_level_t curr_level = LOG_DEBUG;
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
 void debug(debug_level_t level, const char *msg)
 {
-    //if( level >= curr_level ) {
-        puts(msg);
+    // if( level >= curr_level ) {
+    puts(msg);
     //}
 }
 
@@ -56,16 +70,37 @@ void print_point(const char *label, const uint8_t point[32])
 {
     printf("%8s:\t[", label);
     int i = 31;
-    for(i=31; i >= 0; i--)
+    for (i = 31; i >= 0; i--)
         printf("%02x", point[i]);
     printf("]\n");
 }
 
-void
-generate_random_bytes(uint8_t *buf, size_t len)
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void generate_random_bytes(uint8_t *buf, size_t len)
 {
 #if defined(EMSCRIPTEN)
-    getrandom(buf, len, 0);
+    EM_ASM({
+        var cryptoObj = window.crypto || window.msCrypto;
+        let randArray = new Uint8Array($1);
+        if (cryptoObj && cryptoObj.getRandomValues)
+        {
+            cryptoObj.getRandomValues(randArray);
+            console.log("RandArray: " + randArray + "\n");
+        }
+        else
+        {
+            throw new Error("Your browser does not support WebCrypto!");
+        }
+
+        for (var i = 0; i < randArray.length; i++)
+        {
+            Module.HEAPU8[$0 + i] = randArray[i];
+        }
+    },
+           buf, len);
+
 #elif defined(__linux__)
     getrandom(buf, len, 0);
 #else
@@ -73,30 +108,46 @@ generate_random_bytes(uint8_t *buf, size_t len)
 #endif
 }
 
-int
-bsspeke_client_init
-    (
-        bsspeke_client_ctx *ctx,
-        const char* client_id, const size_t client_id_len,
-        const char* server_id, const size_t server_id_len,
-        const char* password, const size_t password_len
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+bsspeke_client_ctx *generate_client()
 {
-    if( client_id_len > 255 ) {
+    bsspeke_client_ctx *client = malloc(sizeof(bsspeke_client_ctx));
+    if (client == NULL)
+    {
+        return NULL;
+    }
+    return client;
+}
+
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_init(
+    bsspeke_client_ctx *ctx,
+    const char *client_id, const size_t client_id_len,
+    const char *server_id, const size_t server_id_len,
+    const char *password, const size_t password_len)
+{
+    if (client_id_len > 255)
+    {
         return -1;
     }
     crypto_wipe(ctx->client_id, 256);
     memcpy(ctx->client_id, client_id, client_id_len);
     ctx->client_id_len = client_id_len;
 
-    if( server_id_len > 255 ) {
+    if (server_id_len > 255)
+    {
         return -1;
     }
     crypto_wipe(ctx->server_id, 256);
     memcpy(ctx->server_id, server_id, server_id_len);
     ctx->server_id_len = server_id_len;
 
-    if( password_len > 255 ) {
+    if (password_len > 255)
+    {
         return -1;
     }
     crypto_wipe(ctx->password, 256);
@@ -107,22 +158,24 @@ bsspeke_client_init
     return 0;
 }
 
-int
-bsspeke_server_init
-    (
-        bsspeke_server_ctx *ctx,
-        const char* server_id, const size_t server_id_len,
-        const char* client_id, const size_t client_id_len
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_server_init(
+    bsspeke_server_ctx *ctx,
+    const char *server_id, const size_t server_id_len,
+    const char *client_id, const size_t client_id_len)
 {
-    if( server_id_len > 255 ) {
+    if (server_id_len > 255)
+    {
         return -1;
     }
     crypto_wipe(ctx->server_id, 256);
     memcpy(ctx->server_id, server_id, server_id_len);
     ctx->server_id_len = server_id_len;
 
-    if( client_id_len > 255 ) {
+    if (client_id_len > 255)
+    {
         return -1;
     }
     crypto_wipe(ctx->client_id, 256);
@@ -133,13 +186,13 @@ bsspeke_server_init
     return 0;
 }
 
-void
-bsspeke_client_generate_blind_from_random
-    (
-        uint8_t blind[32],
-        const uint8_t random[32],
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_client_generate_blind_from_random(
+    uint8_t blind[32],
+    const uint8_t random[32],
+    bsspeke_client_ctx *client)
 {
     debug(LOG_DEBUG, "Hashing client's password");
     // 1. Hash the client's password, client_id, server_id to a point on the curve
@@ -170,7 +223,7 @@ bsspeke_client_generate_blind_from_random
 
     // 2. Generate random r
     debug(LOG_DEBUG, "Generating random blind `r`");
-    //generate_random_bytes(client->r, 32);
+    // generate_random_bytes(client->r, 32);
     memcpy(client->r, random, 32);
     print_point("r", client->r);
     debug(LOG_DEBUG, "Clamping r");
@@ -186,26 +239,32 @@ bsspeke_client_generate_blind_from_random
     return;
 }
 
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+uint8_t *
+#else
 void
-bsspeke_client_generate_blind
-    (
-        uint8_t blind[32],
-        bsspeke_client_ctx *client
-    )
+#endif
+bsspeke_client_generate_blind(
+    uint8_t blind[32],
+    bsspeke_client_ctx *client)
 {
+    printf("bsspeke_client_generate_blind\n");
     uint8_t random[32];
     generate_random_bytes(random, 32);
     bsspeke_client_generate_blind_from_random(blind, random, client);
+#ifdef EMSCRIPTEN
+    return (uint8_t *)blind;
+#endif
 }
 
-
-void
-bsspeke_server_blind_salt
-    (
-        uint8_t blind_salt[32],
-        const uint8_t blind[32],
-        const uint8_t *salt, const size_t salt_len
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_blind_salt(
+    uint8_t blind_salt[32],
+    const uint8_t blind[32],
+    const uint8_t *salt, const size_t salt_len)
 {
     print_point("salt", salt);
 
@@ -226,17 +285,17 @@ bsspeke_server_blind_salt
     print_point("blndsalt", blind_salt);
 }
 
-void
-bsspeke_server_generate_B_from_random
-    (
-        const uint8_t P[32],
-        const uint8_t random[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_generate_B_from_random(
+    const uint8_t P[32],
+    const uint8_t random[32],
+    bsspeke_server_ctx *server)
 {
     // Generate random ephemeral private key b, save it in server->b
     debug(LOG_DEBUG, "Generating ephemeral private key b");
-    //generate_random_bytes(server->b, 32);
+    // generate_random_bytes(server->b, 32);
     memcpy(server->b, random, 32);
     crypto_x25519_clamp(server->b);
     print_point("b", server->b);
@@ -248,46 +307,46 @@ bsspeke_server_generate_B_from_random
     debug(LOG_DEBUG, "Computing ephemeral public key B = b * P");
     crypto_x25519_scalarmult(server->B, server->b, P, 256);
     print_point("B", server->B);
-
 }
 
-void
-bsspeke_server_generate_B
-    (
-        const uint8_t P[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_generate_B(
+    const uint8_t P[32],
+    bsspeke_server_ctx *server)
 {
     uint8_t random[32];
     generate_random_bytes(random, 32);
     bsspeke_server_generate_B_from_random(P, random, server);
 }
 
-
-void
-bsspeke_server_get_B
-    (
-        uint8_t B[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_get_B(
+    uint8_t B[32],
+    bsspeke_server_ctx *server)
 {
     memcpy(B, server->B, 32);
 }
 
-int
-bsspeke_client_generate_master_key
-    (
-        const uint8_t blind_salt[32],
-        uint32_t phf_blocks, uint32_t phf_iterations,
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_generate_master_key(
+    const uint8_t blind_salt[32],
+    uint32_t phf_blocks, uint32_t phf_iterations,
+    bsspeke_client_ctx *client)
 {
     // Sanity checks first, before we do any work
-    if( phf_blocks < BSSPEKE_ARGON2_MIN_PHF_BLOCKS ) {
+    if (phf_blocks < BSSPEKE_ARGON2_MIN_PHF_BLOCKS)
+    {
         debug(LOG_ERROR, "Requested PHF blocks is below the minimum");
         return -1;
     }
-    if( phf_iterations < BSSPEKE_ARGON2_MIN_PHF_ITERATIONS ) {
+    if (phf_iterations < BSSPEKE_ARGON2_MIN_PHF_ITERATIONS)
+    {
         debug(LOG_ERROR, "Requested PHF iterations is below the minimum");
         return -1;
     }
@@ -309,7 +368,7 @@ bsspeke_client_generate_master_key
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
-        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL between the client id and the password
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1); // Insert a NULL between the client id and the password
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
@@ -319,7 +378,8 @@ bsspeke_client_generate_master_key
 
     debug(LOG_DEBUG, "Running the PHF to generate K_password");
     void *work_area;
-    if ((work_area = malloc(phf_blocks * 1024)) == NULL) {
+    if ((work_area = malloc(phf_blocks * 1024)) == NULL)
+    {
         return -1;
     }
     crypto_argon2i(client->K_password, 32, work_area,
@@ -330,13 +390,13 @@ bsspeke_client_generate_master_key
     return 0;
 }
 
-void
-bsspeke_client_generate_hashed_key
-    (
-        uint8_t k[32],
-        const uint8_t *msg, size_t msg_len,
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_client_generate_hashed_key(
+    uint8_t k[32],
+    const uint8_t *msg, size_t msg_len,
+    bsspeke_client_ctx *client)
 {
     crypto_blake2b_ctx hash_ctx;
     crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
@@ -346,21 +406,20 @@ bsspeke_client_generate_hashed_key
     crypto_blake2b_final(&hash_ctx, k);
 }
 
-
-int
-bsspeke_client_generate_keys_from_password
-    (
-        const uint8_t blind_salt[32],
-        uint32_t phf_blocks, uint32_t phf_iterations,
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_generate_keys_from_password(
+    const uint8_t blind_salt[32],
+    uint32_t phf_blocks, uint32_t phf_iterations,
+    bsspeke_client_ctx *client)
 {
-   /*
-    crypto_argon2i(password_hash, 64, work_area,
-                   phf_blocks, phf_iterations,
-                   client->password, client->password_len,
-                   phf_salt, 32);
-    */
+    /*
+     crypto_argon2i(password_hash, 64, work_area,
+                    phf_blocks, phf_iterations,
+                    client->password, client->password_len,
+                    phf_salt, 32);
+     */
 
     /*
     // p || v = pwKdf(password, BlindSalt, idC, idS, settings)
@@ -374,15 +433,16 @@ bsspeke_client_generate_keys_from_password
     //crypto_wipe(password_hash, 64);
     */
 
-    if( bsspeke_client_generate_master_key(blind_salt, phf_blocks, phf_iterations, client) != 0) {
+    if (bsspeke_client_generate_master_key(blind_salt, phf_blocks, phf_iterations, client) != 0)
+    {
         return -1;
     }
 
     const char *p_modifier = "curve_point_p";
     const char *v_modifier = "private_key_v";
 
-    bsspeke_client_generate_hashed_key(client->p, (const uint8_t *) p_modifier, strlen(p_modifier), client);
-    bsspeke_client_generate_hashed_key(client->v, (const uint8_t *) v_modifier, strlen(v_modifier), client);
+    bsspeke_client_generate_hashed_key(client->p, (const uint8_t *)p_modifier, strlen(p_modifier), client);
+    bsspeke_client_generate_hashed_key(client->v, (const uint8_t *)v_modifier, strlen(v_modifier), client);
     crypto_x25519_clamp(client->v);
 
     print_point("p", client->p);
@@ -390,27 +450,31 @@ bsspeke_client_generate_keys_from_password
 
     return 0;
 }
-        
 
-int
-bsspeke_client_generate_P_and_V
-    (
-        uint8_t P[32], uint8_t V[32],
-        const uint8_t blind_salt[32],
-        uint32_t phf_blocks, uint32_t phf_iterations,
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_generate_P_and_V(
+#ifdef EMSCRIPTEN
+    uint8_t *P, uint8_t *V,
+#else
+    uint8_t P[32], uint8_t V[32],
+#endif
+    const uint8_t blind_salt[32],
+    uint32_t phf_blocks, uint32_t phf_iterations,
+    bsspeke_client_ctx *client)
 {
     int rc = bsspeke_client_generate_keys_from_password(blind_salt,
                                                         phf_blocks, phf_iterations,
                                                         client);
-    if( rc != 0 ) {
+    if (rc != 0)
+    {
         debug(LOG_ERROR, "Password hashing function failed");
         return -1;
     }
 
     // Hash p onto the curve to get this user's base point P
-    //uint8_t P[32];
+    // uint8_t P[32];
     debug(LOG_DEBUG, "Hashing p onto the curve to get P");
     crypto_hidden_to_curve(P, client->p);
     print_point("P", P);
@@ -423,20 +487,20 @@ bsspeke_client_generate_P_and_V
     return 0;
 }
 
-
-int
-bsspeke_client_generate_A_from_random
-    (
-        const uint8_t blind_salt[32],
-        uint32_t phf_blocks, uint32_t phf_iterations,
-        const uint8_t random[32],
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_generate_A_from_random(
+    const uint8_t blind_salt[32],
+    uint32_t phf_blocks, uint32_t phf_iterations,
+    const uint8_t random[32],
+    bsspeke_client_ctx *client)
 {
     int rc = bsspeke_client_generate_keys_from_password(blind_salt,
                                                         phf_blocks, phf_iterations,
                                                         client);
-    if( rc != 0 ) {
+    if (rc != 0)
+    {
         debug(LOG_ERROR, "Password hashing failed");
         return -1;
     }
@@ -449,8 +513,8 @@ bsspeke_client_generate_A_from_random
 
     // Generate a random ephemeral private key a, store it in ctx->a
     debug(LOG_DEBUG, "Generating ephemeral private key a");
-    //arc4random_buf(client->a, 32);
-    //generate_random_bytes(client->a, 32);
+    // arc4random_buf(client->a, 32);
+    // generate_random_bytes(client->a, 32);
     memcpy(client->a, random, 32);
     crypto_x25519_clamp(client->a);
     print_point("a", client->a);
@@ -462,41 +526,41 @@ bsspeke_client_generate_A_from_random
     return 0;
 }
 
-int
-bsspeke_client_generate_A
-    (
-        const uint8_t blind_salt[32],
-        uint32_t phf_blocks, uint32_t phf_iterations,
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_generate_A(
+    const uint8_t blind_salt[32],
+    uint32_t phf_blocks, uint32_t phf_iterations,
+    bsspeke_client_ctx *client)
 {
     uint8_t random[32];
     generate_random_bytes(random, 32);
     return bsspeke_client_generate_A_from_random(blind_salt, phf_blocks, phf_iterations, random, client);
 }
 
-void
-bsspeke_client_get_A
-    (
-        uint8_t A[32],
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_client_get_A(
+    uint8_t A[32],
+    bsspeke_client_ctx *client)
 {
     memcpy(A, client->A, 32);
 }
 
-void
-bsspeke_client_derive_shared_key
-    (
-        const uint8_t B[32],
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_client_derive_shared_key(
+    const uint8_t B[32],
+    bsspeke_client_ctx *client)
 {
-    // Compute the two Diffie-Hellman shared secrets 
+    // Compute the two Diffie-Hellman shared secrets
     debug(LOG_DEBUG, "Computing Diffie-Hellman shared secrets");
-    printf("%8s:\t[%s]\n",  "client", client->client_id);
+    printf("%8s:\t[%s]\n", "client", client->client_id);
     printf("%8s:\t[%zu]\n", "length", client->client_id_len);
-    printf("%8s:\t[%s]\n",  "server", client->server_id);
+    printf("%8s:\t[%s]\n", "server", client->server_id);
     printf("%8s:\t[%zu]\n", "length", client->server_id_len);
     print_point("A", client->A);
     print_point("B", B);
@@ -517,11 +581,11 @@ bsspeke_client_derive_shared_key
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
-        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL after the client id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1); // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               client->server_id,
                               client->server_id_len);
-        crypto_blake2b_update(&hash_ctx, &null_byte, 1);  // Insert a NULL after the server id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1); // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, client->A, 32);
         crypto_blake2b_update(&hash_ctx, B, 32);
         crypto_blake2b_update(&hash_ctx, a_B, 32);
@@ -531,12 +595,12 @@ bsspeke_client_derive_shared_key
     print_point("K_c", client->K_c);
 }
 
-void
-bsspeke_client_generate_verifier
-    (
-        uint8_t client_verifier[32],
-        bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_client_generate_verifier(
+    uint8_t client_verifier[32],
+    bsspeke_client_ctx *client)
 {
     // Hash k and the client modifier to get our verifier, save it in client_verifier
     debug(LOG_DEBUG, "Hashing K_c and modifier to get our verifier");
@@ -552,13 +616,13 @@ bsspeke_client_generate_verifier
     print_point("client_v", client_verifier);
 }
 
-void
-bsspeke_server_derive_shared_key
-    (
-        const uint8_t A[32],
-        const uint8_t V[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_derive_shared_key(
+    const uint8_t A[32],
+    const uint8_t V[32],
+    bsspeke_server_ctx *server)
 {
     // Compute the two Diffie-Hellman shared secrets
     debug(LOG_DEBUG, "Computing Diffie-Hellman shared secrets");
@@ -585,11 +649,11 @@ bsspeke_server_derive_shared_key
         crypto_blake2b_update(&hash_ctx,
                               server->client_id,
                               server->client_id_len);
-        crypto_blake2b_update(&hash_ctx, &null_byte, 1);    // Insert a NULL after the client id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1); // Insert a NULL after the client id
         crypto_blake2b_update(&hash_ctx,
                               server->server_id,
                               server->server_id_len);
-        crypto_blake2b_update(&hash_ctx, &null_byte, 1);    // Insert a NULL after the server id
+        crypto_blake2b_update(&hash_ctx, &null_byte, 1); // Insert a NULL after the server id
         crypto_blake2b_update(&hash_ctx, A, 32);
         crypto_blake2b_update(&hash_ctx, server->B, 32);
         crypto_blake2b_update(&hash_ctx, b_A, 32);
@@ -599,12 +663,12 @@ bsspeke_server_derive_shared_key
     print_point("K_s", server->K_s);
 }
 
-int
-bsspeke_server_verify_client
-    (
-        const uint8_t client_verifier[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_server_verify_client(
+    const uint8_t client_verifier[32],
+    bsspeke_server_ctx *server)
 {
 
     // Check that the client's hash is correct
@@ -624,7 +688,8 @@ bsspeke_server_verify_client
     print_point("mine", my_client_verifier);
 
     // Compare vs client_verifier
-    if( crypto_verify32(client_verifier, my_client_verifier) != 0 ) {
+    if (crypto_verify32(client_verifier, my_client_verifier) != 0)
+    {
         debug(LOG_ERROR, "Client's verifier doesn't match!");
         return -1;
     }
@@ -633,12 +698,12 @@ bsspeke_server_verify_client
     return 0;
 }
 
-void
-bsspeke_server_generate_verifier
-    (
-        uint8_t server_verifier[32],
-        bsspeke_server_ctx *server
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+void bsspeke_server_generate_verifier(
+    uint8_t server_verifier[32],
+    bsspeke_server_ctx *server)
 {
     // Compute our own verifier H( k || VERIFY_SERVER_MODIFIER ), save it in server_verifier
     debug(LOG_DEBUG, "Computing server verifier hash");
@@ -654,12 +719,12 @@ bsspeke_server_generate_verifier
     print_point("server_v", server_verifier);
 }
 
-int
-bsspeke_client_verify_server
-    (
-        const uint8_t server_verifier[32],
-        const bsspeke_client_ctx *client
-    )
+#ifdef EMSCRIPTEN
+EMSCRIPTEN_KEEPALIVE
+#endif
+int bsspeke_client_verify_server(
+    const uint8_t server_verifier[32],
+    const bsspeke_client_ctx *client)
 {
     // Compute our own version of the server's verifier hash
     debug(LOG_DEBUG, "Verifying hash from the server");
@@ -677,7 +742,8 @@ bsspeke_client_verify_server
     print_point("server's", server_verifier);
 
     // If the hashes don't match, return failure
-    if( crypto_verify32(server_verifier, my_server_verifier) != 0 ) {
+    if (crypto_verify32(server_verifier, my_server_verifier) != 0)
+    {
         debug(LOG_WARN, "Server's hash doesn't match.  Aborting.");
         return -1;
     }
@@ -686,4 +752,3 @@ bsspeke_client_verify_server
     // Otherwise, return success
     return 0;
 }
-
