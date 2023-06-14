@@ -2,6 +2,7 @@
  * bsspeke.c - BS-SPEKE over Curve25519
  *
  * Author: Charles V. Wright <cvwright@futo.org>
+ *         Varun Kalappa <varun@futo.org>
  *
  * Copyright (c) 2022,2023 FUTO Holdings, Inc.
  *
@@ -25,7 +26,7 @@
 
 /*
 For Emscripten compilation to Javascript use the following:
-./emcc bsspeke.c minimonocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH
+./emcc bsspeke.c monocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH
 
 This will export all functions with the macro EMSCRIPTEN_KEEPALIVE, free and
 malloc, and the emscripten ccall. If you want to shorten the list of exported
@@ -37,7 +38,7 @@ definitions.
 #include "emscripten/emscripten.h"
 #endif
 
-#include "minimonocypher.h"
+#include "monocypher.h"
 #include "include/bsspeke.h"
 
 enum debug_level
@@ -73,6 +74,11 @@ void print_point(const char *label, const uint8_t point[32])
     for (i = 31; i >= 0; i--)
         printf("%02x", point[i]);
     printf("]\n");
+}
+
+void clamp(uint8_t scalar[32])
+{
+    crypto_eddsa_trim_scalar(scalar, scalar);
 }
 
 #ifdef EMSCRIPTEN
@@ -201,7 +207,7 @@ void bsspeke_client_generate_blind_from_random(
     {
         crypto_blake2b_ctx hash_ctx;
         // Give us a 256 bit (32 byte) hash; Don't use a key
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         // Add the client id, server id, and the password to the hash
         crypto_blake2b_update(&hash_ctx,
                               (const uint8_t *)(client->password),
@@ -217,7 +223,7 @@ void bsspeke_client_generate_blind_from_random(
     }
     debug(LOG_DEBUG, "Mapping password hash onto the curve");
     // Now use Elligator to map our scalar hash to a point on the curve
-    crypto_hidden_to_curve(curve_point, scalar_hash);
+    crypto_elligator_map(curve_point, scalar_hash);
 
     print_point("H(pass)", curve_point);
 
@@ -227,7 +233,7 @@ void bsspeke_client_generate_blind_from_random(
     memcpy(client->r, random, 32);
     print_point("r", client->r);
     debug(LOG_DEBUG, "Clamping r");
-    crypto_x25519_clamp(client->r);
+    clamp(client->r);
     print_point("r", client->r);
 
     // 3. Multiply our curve point by r
@@ -271,12 +277,9 @@ void bsspeke_server_blind_salt(
     // Hash the salt
     debug(LOG_DEBUG, "Hashing the salt");
     uint8_t H_salt[32];
-    crypto_blake2b_general(H_salt, 32,
-                           NULL, 0,
-                           salt,
-                           salt_len);
+    crypto_blake2b(H_salt, 32, salt, salt_len);
     // Use clamp() to ensure we stay on the curve in the multiply below
-    crypto_x25519_clamp(H_salt);
+    clamp(H_salt);
     print_point("H_salt", H_salt);
 
     // Multiply H(salt) by blind, save into blind_salt
@@ -297,7 +300,7 @@ void bsspeke_server_generate_B_from_random(
     debug(LOG_DEBUG, "Generating ephemeral private key b");
     // generate_random_bytes(server->b, 32);
     memcpy(server->b, random, 32);
-    crypto_x25519_clamp(server->b);
+    clamp(server->b);
     print_point("b", server->b);
 
     debug(LOG_DEBUG, "Using user's base point P");
@@ -363,7 +366,7 @@ int bsspeke_client_generate_master_key(
     uint8_t phf_salt[32];
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx, oblivious_salt, 32);
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
@@ -382,10 +385,25 @@ int bsspeke_client_generate_master_key(
     {
         return -1;
     }
-    crypto_argon2i(client->K_password, 32, work_area,
-                   phf_blocks, phf_iterations,
-                   client->password, client->password_len,
-                   phf_salt, 32);
+
+    crypto_argon2_config config;
+    config.algorithm = CRYPTO_ARGON2_I;
+    config.nb_blocks = phf_blocks;
+    config.nb_passes = phf_iterations;
+    config.nb_lanes = 1;
+
+    crypto_argon2_inputs inputs;
+    inputs.pass = client->password;
+    inputs.pass_size = client->password_len;
+    inputs.salt = phf_salt;
+    inputs.salt_size = 32;
+
+    crypto_argon2(client->K_password, 32,
+                  work_area,
+                  config,
+                  inputs,
+                  crypto_argon2_no_extras);
+
     free(work_area);
     return 0;
 }
@@ -398,12 +416,7 @@ void bsspeke_client_generate_hashed_key(
     const uint8_t *msg, size_t msg_len,
     bsspeke_client_ctx *client)
 {
-    crypto_blake2b_ctx hash_ctx;
-    crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
-    crypto_blake2b_update(&hash_ctx, client->K_password, 32);
-    crypto_blake2b_update(&hash_ctx, msg, msg_len);
-    crypto_blake2b_update(&hash_ctx, &null_byte, 1);
-    crypto_blake2b_final(&hash_ctx, k);
+    crypto_blake2b_keyed(k, 32, client->K_password, 32, msg, msg_len);
 }
 
 #ifdef EMSCRIPTEN
@@ -443,7 +456,7 @@ int bsspeke_client_generate_keys_from_password(
 
     bsspeke_client_generate_hashed_key(client->p, (const uint8_t *)p_modifier, strlen(p_modifier), client);
     bsspeke_client_generate_hashed_key(client->v, (const uint8_t *)v_modifier, strlen(v_modifier), client);
-    crypto_x25519_clamp(client->v);
+    clamp(client->v);
 
     print_point("p", client->p);
     print_point("v", client->v);
@@ -476,7 +489,7 @@ int bsspeke_client_generate_P_and_V(
     // Hash p onto the curve to get this user's base point P
     // uint8_t P[32];
     debug(LOG_DEBUG, "Hashing p onto the curve to get P");
-    crypto_hidden_to_curve(P, client->p);
+    crypto_elligator_map(P, client->p);
     print_point("P", P);
 
     // Generate our long-term public key V = v * P
@@ -508,7 +521,7 @@ int bsspeke_client_generate_A_from_random(
     // Hash p onto the curve to get this user's base point P
     uint8_t P[32];
     debug(LOG_DEBUG, "Hashing p onto the curve to get P");
-    crypto_hidden_to_curve(P, client->p);
+    crypto_elligator_map(P, client->p);
     print_point("P", P);
 
     // Generate a random ephemeral private key a, store it in ctx->a
@@ -516,7 +529,7 @@ int bsspeke_client_generate_A_from_random(
     // arc4random_buf(client->a, 32);
     // generate_random_bytes(client->a, 32);
     memcpy(client->a, random, 32);
-    crypto_x25519_clamp(client->a);
+    clamp(client->a);
     print_point("a", client->a);
     // Generate the ephemeral public key A = a * P, store it in A
     debug(LOG_DEBUG, "Generating ephemeral public key A = a * P");
@@ -577,7 +590,7 @@ void bsspeke_client_derive_shared_key(
     debug(LOG_DEBUG, "Hashing current state to get key K_c");
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx,
                               client->client_id,
                               client->client_id_len);
@@ -606,7 +619,7 @@ void bsspeke_client_generate_verifier(
     debug(LOG_DEBUG, "Hashing K_c and modifier to get our verifier");
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx, client->K_c, 32);
         crypto_blake2b_update(&hash_ctx,
                               (uint8_t *)BSSPEKE_VERIFY_CLIENT_MODIFIER,
@@ -645,7 +658,7 @@ void bsspeke_server_derive_shared_key(
     debug(LOG_DEBUG, "Hashing state so far to generate K_s");
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx,
                               server->client_id,
                               server->client_id_len);
@@ -677,7 +690,7 @@ int bsspeke_server_verify_client(
     uint8_t my_client_verifier[32];
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx, server->K_s, 32);
         crypto_blake2b_update(&hash_ctx,
                               (uint8_t *)BSSPEKE_VERIFY_CLIENT_MODIFIER,
@@ -709,7 +722,7 @@ void bsspeke_server_generate_verifier(
     debug(LOG_DEBUG, "Computing server verifier hash");
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx, server->K_s, 32);
         crypto_blake2b_update(&hash_ctx,
                               (uint8_t *)BSSPEKE_VERIFY_SERVER_MODIFIER,
@@ -731,7 +744,7 @@ int bsspeke_client_verify_server(
     uint8_t my_server_verifier[32];
     {
         crypto_blake2b_ctx hash_ctx;
-        crypto_blake2b_general_init(&hash_ctx, 32, NULL, 0);
+        crypto_blake2b_init(&hash_ctx, 32);
         crypto_blake2b_update(&hash_ctx, client->K_c, 32);
         crypto_blake2b_update(&hash_ctx,
                               (uint8_t *)BSSPEKE_VERIFY_SERVER_MODIFIER,

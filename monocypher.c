@@ -1548,6 +1548,12 @@ static void scalarmult(u8 q[32], const u8 scalar[32], const u8 p[32],
 	WIPE_BUFFER(x3);  WIPE_BUFFER(z3);  WIPE_BUFFER(t1);
 }
 
+// cvw: Hacked/kludged this in here to expose the function for BS-SPEKE
+void crypto_x25519_scalarmult(uint8_t q[32], const uint8_t scalar[32],
+                              const uint8_t p[32], int nb_bits) {
+    scalarmult(q, scalar, p, nb_bits);
+}
+
 void crypto_x25519(u8       raw_shared_secret[32],
                    const u8 your_secret_key  [32],
                    const u8 their_public_key [32])

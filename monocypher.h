@@ -205,6 +205,11 @@ void crypto_x25519_inverse(uint8_t       blind_salt [32],
                            const uint8_t private_key[32],
                            const uint8_t curve_point[32]);
 
+
+// cvw: Exposing low-level primitives for BS-SPEKE
+void crypto_x25519_scalarmult(uint8_t q[32], const uint8_t scalar[32],
+                              const uint8_t p[32], int nb_bits);
+
 // "Dirty" versions of x25519_public_key().
 // Use with crypto_elligator_rev().
 // Leaks 3 bits of the private key.
