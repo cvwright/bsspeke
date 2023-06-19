@@ -419,6 +419,19 @@ void bsspeke_client_generate_hashed_key(
     crypto_blake2b_keyed(k, 32, client->K_password, 32, msg, msg_len);
 }
 
+void bsspeke_client_generate_internal_key(
+    uint8_t k[32],
+    const uint8_t *msg, size_t msg_len,
+    bsspeke_client_ctx *client)
+{
+    crypto_blake2b_ctx hash_ctx;
+    crypto_blake2b_init(&hash_ctx, 32);
+    crypto_blake2b_update(&hash_ctx, client->K_password, 32);
+    crypto_blake2b_update(&hash_ctx, msg, msg_len);
+    crypto_blake2b_update(&hash_ctx, &null_byte, 1);
+    crypto_blake2b_final(&hash_ctx, k);
+}
+
 #ifdef EMSCRIPTEN
 EMSCRIPTEN_KEEPALIVE
 #endif
@@ -454,8 +467,8 @@ int bsspeke_client_generate_keys_from_password(
     const char *p_modifier = "curve_point_p";
     const char *v_modifier = "private_key_v";
 
-    bsspeke_client_generate_hashed_key(client->p, (const uint8_t *)p_modifier, strlen(p_modifier), client);
-    bsspeke_client_generate_hashed_key(client->v, (const uint8_t *)v_modifier, strlen(v_modifier), client);
+    bsspeke_client_generate_internal_key(client->p, (const uint8_t *)p_modifier, strlen(p_modifier), client);
+    bsspeke_client_generate_internal_key(client->v, (const uint8_t *)v_modifier, strlen(v_modifier), client);
     clamp(client->v);
 
     print_point("p", client->p);
