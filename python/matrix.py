@@ -33,6 +33,8 @@ capable_stages = [
     "m.enroll.bsspeke-ecc.save",
     "m.enroll.email.request_token",
     "m.enroll.email.submit_token",
+    "m.login.email.request_token",
+    "m.login.email.submit_token",
 ]
 
 session_storage = {}
@@ -132,6 +134,28 @@ def do_m_enroll_email_submit_token(*args, **kwargs):
     session = kwargs["session"]
     auth = {
         "type": "m.enroll.email.submit_token",
+        "session": session,
+        "token": token,
+    }
+    return do_generic_uia_stage(*args, auth=auth)
+
+
+def do_m_login_email_request_token(*args, **kwargs):
+    email = kwargs["email"]
+    session = kwargs["session"]
+    auth = {
+        "type": "m.login.email.request_token",
+        "session": session,
+        "email": email,
+    }
+    return do_generic_uia_stage(*args, auth=auth)
+
+
+def do_m_login_email_submit_token(*args, **kwargs):
+    token = kwargs["token"]
+    session = kwargs["session"]
+    auth = {
+        "type": "m.login.email.submit_token",
         "session": session,
         "token": token,
     }
@@ -305,6 +329,13 @@ def do_uia_stage(*args, **kwargs):
     elif stage == "m.enroll.email.submit_token":
         token = input("Enter email token: ")
         return do_m_enroll_email_submit_token(*args, session=session, token=token)
+
+    elif stage == "m.login.email.request_token":
+        email = kwargs["email"]
+        return do_m_login_email_request_token(*args, session=session, email=email)
+    elif stage == "m.login.email.submit_token":
+        token = input("Enter email token: ")
+        return do_m_login_email_submit_token(*args, session=session, token=token)
 
     assert False # Throw an error if we are still here
 
