@@ -109,7 +109,48 @@ def test_register_login_deactivate(domain, email):
     print("Deactivation was successful")
 
 
+################################################################################
+#
+# Registration with refresh tokens
+#
+################################################################################
+
+def test_register_refresh_token(domain, email):
+    homeserver = "https://matrix." + domain
+
+    username = "test_%04x" % random.getrandbits(16)
+    user_id = "@%s:%s" % (username, domain)
+    password = secrets.token_hex(12)
+    #email = "%s@example.com" % username
+    print("Running test with user id [%s]" % user_id)
+
+    user_info = {
+        "domain": domain,
+        "homeserver": homeserver,
+        "username": username,
+        "user_id": user_id,
+        "password": password,
+        "email": email,
+        "registration_token": "0000-1111-2222-4444",
+        "refresh_token": True,
+    }
+
+    print("\n\nRegistering username [%s] on Matrix domain [%s]" % (username, domain))
+    r1 = matrix.register(**user_info)
+    assert r1.status_code == 200
+    print("Registration was successful")
+    j1 = r1.json()
+    print(json.dumps(j1, indent=4))
+
+
+################################################################################
+#
+# Main
+#
+################################################################################
+
 if __name__ == "__main__":
     domain = sys.argv[1]
     email = sys.argv[2]
-    test_register_login_deactivate(domain, email)
+    #test_register_login_deactivate(domain, email)
+    test_register_refresh_token(domain, email)
