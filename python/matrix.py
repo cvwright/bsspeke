@@ -364,6 +364,7 @@ def register(**kwargs):
     username = kwargs["username"]
     password = kwargs["password"]
     inhibit_login = kwargs.get("inhibit_login", False)
+    refresh_token = kwargs.get("refresh_token", False)
     print("Registering user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
     #email = kwargs["email"]
     #registration_token = kwargs["registration_token"]
@@ -373,6 +374,7 @@ def register(**kwargs):
         "username": username,
         "password": password,
         "inhibit_login": inhibit_login,
+        "refresh_token": refresh_token,
     }
     r = do_uia_request(requests.post, url, logged_out_headers(), body, **kwargs)
     return r
@@ -383,6 +385,7 @@ def login(**kwargs):
     homeserver = kwargs["homeserver"]
     user_id = kwargs["user_id"]
     password = kwargs["password"]
+    enable_refresh_token = kwargs.get("refresh_token", False)
     print("Logging in user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
     path = "/_matrix/client/v3/login"
     url = homeserver + path
@@ -395,6 +398,8 @@ def login(**kwargs):
     for key in ["device_id", "initial_device_display_name", "refresh_token"]:
         if key in kwargs:
             login_body[key] = kwargs[key]
+    if enable_refresh_token:
+        login_body["refresh_token"] = True
 
     # Make sure that we're not trying to log in from an already logged-in session
     assert "access_token" not in kwargs
@@ -535,11 +540,16 @@ def account_auth(**kwargs):
 
 def create_room(**kwargs):
     # Non-optional kwargs
-    homeserver = kwargs["homeserver"]
+    homeserver = kwargs.get("homeserver", None)
+    if homeserver is None:
+        domain = kwargs.get("domain", None)
+        assert domain is not None
+        homeserver = "https://matrix.%s/" % domain
     access_token = kwargs["access_token"]
 
     # Optional kwargs
     name = kwargs.get("name", None)
+    room_type = kwargs.get("type", None)
     topic = kwargs.get("topic", None)
     preset = kwargs.get("preset", "private_chat")
     join_rule = kwargs.get("join_rule", "invite")
@@ -558,6 +568,8 @@ def create_room(**kwargs):
     create_body = {}
     if name is not None:
         create_body["name"] = name
+    if room_type is not None:
+        create_body["type"] = room_type
     if topic is not None:
         create_body["topic"] = topic
     if preset is not None:
@@ -596,9 +608,9 @@ def knock(**kwargs):
     # Optional kwargs
     reason = kwargs.get("reason", None)
 
-    print("\n\n")
-    print("*" * 60)
-    print("Knocking on room %s" % room_id)
+    #print("\n\n")
+    #print("*" * 60)
+    #print("Knocking on room %s" % room_id)
 
     path = "/_matrix/client/v3/knock/%s" % room_id
     url = homeserver + path
@@ -616,6 +628,35 @@ def knock(**kwargs):
     #return j["room_id"]
     return r
 
+def join(**kwargs):
+    # Non-optional kwargs
+    homeserver = kwargs["homeserver"]
+    access_token = kwargs["access_token"]
+    room_id = kwargs["room_id"]
+
+    # Optional kwargs
+    reason = kwargs.get("reason", None)
+
+    #print("\n\n")
+    #print("*" * 60)
+    #print("Joining room %s" % room_id)
+
+    path = "/_matrix/client/v3/join/%s" % room_id
+    url = homeserver + path
+
+    headers = logged_out_headers()
+    headers["Authorization"] = "Bearer %s" % access_token
+
+    join_body = {
+        "reason": reason
+    }
+
+    r = requests.post(url, headers=headers, json=join_body)
+    #assert r.status_code == 200
+    #j = r.json()
+    #return j["room_id"]
+    return r
+
 
 def invite(**kwargs):
     # Non-optional kwargs
@@ -627,9 +668,9 @@ def invite(**kwargs):
     # Optional kwargs
     reason = kwargs.get("reason", None)
 
-    print("\n\n")
-    print("*" * 60)
-    print("Inviting user %s to room %s" % (user_id, room_id))
+    #print("\n\n")
+    #print("*" * 60)
+    #print("Inviting user %s to room %s" % (user_id, room_id))
 
     path = "/_matrix/client/v3/rooms/%s/invite" % room_id
     url = homeserver + path
