@@ -145,6 +145,127 @@ def test_register_refresh_token(domain, email):
 
 ################################################################################
 #
+# Account recovery via email
+#
+################################################################################
+    
+def test_register_and_recover(domain, email):
+    homeserver = "https://matrix." + domain
+
+    username = "test_%04x" % random.getrandbits(16)
+    user_id = "@%s:%s" % (username, domain)
+    password1 = secrets.token_hex(12)
+    password2 = secrets.token_hex(12)
+    #email = "%s@example.com" % username
+    print("Running test with user id [%s]" % user_id)
+
+    user_info = {
+        "domain": domain,
+        "homeserver": homeserver,
+        "username": username,
+        "user_id": user_id,
+        "new_password": password1,
+        "email": email,
+        "registration_token": "0000-1111-2222-4444",
+        "stages": [
+            "m.login.registration_token",
+            "org.futo.subscriptions.free_forever",
+            "m.enroll.username",
+            "m.login.dummy",
+            "m.login.terms",
+            "m.enroll.email.request_token",
+            "m.enroll.email.submit_token",
+            "m.enroll.bsspeke-ecc.oprf",
+            "m.enroll.bsspeke-ecc.save",
+            "m.login.bsspeke-ecc.oprf",
+            "m.login.bsspeke-ecc.verify",
+        ]
+    }
+
+    print("\n\nRegistering username [%s] on Matrix domain [%s]" % (username, domain))
+    r1 = matrix.register(**user_info)
+    assert r1.status_code == 200
+    print("Registration was successful")
+
+    print("\n\nLogging in as Matrix user [%s]" % user_id)
+    device_display_name = "Test Device " + secrets.token_hex(4)
+    user_info["initial_device_display_name"] = device_display_name
+    user_info["password"] = password1
+    r2 = matrix.login(**user_info)
+    assert r2.status_code == 200
+
+    #
+    # Now we "forget" the previous session and recover the account via email
+    #
+    print("\n\nRecovering account for [%s] on Matrix domain [%s]" % (username, domain))
+    # No password or password verify stages
+    recover_info = {
+        "domain": domain,
+        "homeserver": homeserver,
+        "username": username,
+        "user_id": user_id,
+        "email": email,
+        "new_password": password2,
+        "stages": [
+            "m.login.dummy",
+            "m.login.terms",
+            "m.login.email.request_token",
+            "m.login.email.submit_token",
+            "m.enroll.bsspeke-ecc.oprf",
+            "m.enroll.bsspeke-ecc.save",
+        ]
+    }
+    r3 = matrix.login(**recover_info)
+    assert r3.status_code == 200
+
+    #
+    # We log in using the second password, to verify that it works now
+    #
+    print("\n\nLogging in with changed password")
+    new_info = {
+        "domain": domain,
+        "homeserver": homeserver,
+        "username": username,
+        "user_id": user_id,
+        "password": password2,
+        "stages": [
+            "m.login.dummy",
+            "m.login.terms",
+            "m.login.email.request_token",
+            "m.login.email.submit_token",
+            "m.login.bsspeke-ecc.oprf",
+            "m.login.bsspeke-ecc.verify",
+        ]
+    }
+    r4 = matrix.login(**new_info)
+    assert r4.status_code == 200
+    print("\nLogin success with new password!\n")
+
+    #
+    # Lastly we attempt to login with the first password - this should fail
+    #
+    print("\n\nLogging in with old password - This should fail")
+    old_info = {
+        "domain": domain,
+        "homeserver": homeserver,
+        "username": username,
+        "user_id": user_id,
+        "password": password1,
+        "stages": [
+            "m.login.dummy",
+            "m.login.terms",
+            "m.login.email.request_token",
+            "m.login.email.submit_token",
+            "m.login.bsspeke-ecc.oprf",
+            "m.login.bsspeke-ecc.verify",
+        ]
+    }
+    r5 = matrix.login(**old_info)
+    assert r5.status_code != 200
+
+
+################################################################################
+#
 # Main
 #
 ################################################################################
@@ -153,4 +274,5 @@ if __name__ == "__main__":
     domain = sys.argv[1]
     email = sys.argv[2]
     #test_register_login_deactivate(domain, email)
-    test_register_refresh_token(domain, email)
+    #test_register_refresh_token(domain, email)
+    test_register_and_recover(domain, email)
