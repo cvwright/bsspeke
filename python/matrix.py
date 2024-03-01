@@ -20,8 +20,9 @@ def logged_out_headers():
         'Accept': 'application/json'
     }
 
-capable_stages = [
+all_capable_stages = [
     "m.login.registration_token",
+    "org.futo.subscriptions.free_forever",
     "m.enroll.username",
     "m.login.password",
     "m.login.dummy",
@@ -69,6 +70,15 @@ def do_m_login_registration_token(*args, **kwargs):
     return do_generic_uia_stage(*args, auth=auth)
 
 
+def do_org_futo_subscriptions_free_forever(*args, **kwargs):
+    session = kwargs["session"]
+    auth = {
+        "type": "org.futo.subscriptions.free_forever",
+        "session": session,
+    }
+    return do_generic_uia_stage(*args, auth=auth)
+
+
 def do_m_enroll_username(*args, **kwargs):
     username = kwargs["username"]
     session = kwargs["session"]
@@ -90,7 +100,7 @@ def do_m_login_terms(*args, **kwargs):
 
 
 def do_m_enroll_password(*args, **kwargs):
-    password = kwargs["password"]
+    password = kwargs["new_password"]
     session = kwargs["session"]
     auth = {
         "type": "m.enroll.password",
@@ -297,6 +307,9 @@ def do_uia_stage(*args, **kwargs):
         token = kwargs["registration_token"]
         return do_m_login_registration_token(*args, session=session, token=token)
 
+    elif stage == "org.futo.subscriptions.free_forever":
+        return do_org_futo_subscriptions_free_forever(*args, session=session)
+
     elif stage == "m.login.bsspeke-ecc.oprf":
         domain = kwargs["domain"]
         user_id = kwargs["user_id"]
@@ -306,7 +319,7 @@ def do_uia_stage(*args, **kwargs):
     elif stage == "m.enroll.bsspeke-ecc.oprf":
         domain = kwargs["domain"]
         user_id = kwargs["user_id"]
-        password = kwargs["password"]
+        password = kwargs["new_password"]
         return do_m_enroll_bsspeke_oprf(*args, session=session, domain=domain, user_id=user_id, password=password)
 
     elif stage == "m.enroll.bsspeke-ecc.save":
@@ -363,6 +376,8 @@ def do_uia_request(func, url, headers, body, **kwargs):
         completed = uia_state.get("completed", [])
         print("Got completed =", completed)
 
+        capable_stages = kwargs.get("stages", all_capable_stages)
+
         # Which flow are we working towards completing?
         if selected_flow is None:
             for flow in flows:
@@ -393,7 +408,7 @@ def register(**kwargs):
     domain = kwargs["domain"]
     user_id = kwargs["user_id"]
     username = kwargs["username"]
-    password = kwargs["password"]
+    password = kwargs["new_password"]
     inhibit_login = kwargs.get("inhibit_login", False)
     refresh_token = kwargs.get("refresh_token", False)
     print("Registering user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
@@ -415,7 +430,7 @@ def login(**kwargs):
     domain = kwargs["domain"]
     homeserver = kwargs["homeserver"]
     user_id = kwargs["user_id"]
-    password = kwargs["password"]
+    password = kwargs.get("password", None)
     enable_refresh_token = kwargs.get("refresh_token", False)
     print("Logging in user [%s] on domain [%s] with password [%s]" % (user_id, domain, password))
     path = "/_matrix/client/v3/login"
