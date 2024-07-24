@@ -16,7 +16,7 @@ $ python3 bsspeke_build.py
 ### Running the Swiclops tests
 The `python` subdirectory contains three files for testing against the
 BS-SPEKE module for Matrix user-interactive authentication in
-[Swiclops](https://gitlab.futo.org/cvwright/swiclops.git).
+[Swiclops](https://github.com/circles-project/swiclops.git).
 
 The Swiclops test scripts take two command-line parameters: (1) the Matrix domain
 of the server where Swiclops is running, and (2) the email address to use for
