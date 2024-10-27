@@ -2,7 +2,7 @@
  * bsspeke.h - BS-SPEKE over Curve25519
  *
  * Author: Charles V. Wright <cvwright@futo.org>
- * 
+ *
  * Copyright (c) 2022 FUTO Holdings, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -76,7 +76,7 @@ typedef struct {
 
     uint8_t b[32];           // Ephemeral private key
     uint8_t B[32];           // Ephemeral public key
-    
+
     uint8_t A[32];           // Client's ephemeral public key
 
     uint8_t K_s[32];         // Session key
@@ -95,11 +95,11 @@ int
 bsspeke_server_init(bsspeke_server_ctx *ctx,
                     const char* server_id, const size_t server_id_len,
                     const char* client_id, const size_t client_id_len);
-                    
+
 #ifdef EMSCRIPTEN
 uint8_t*
 #else
-void 
+void
 #endif
 bsspeke_client_generate_blind(
     uint8_t blind[32],
@@ -119,7 +119,11 @@ void
 bsspeke_server_get_B(uint8_t B[32],
                      bsspeke_server_ctx *server);
 
+#ifdef EMSCRIPTEN
+uint8_t*
+#else
 void
+#endif
 bsspeke_client_generate_hashed_key(uint8_t k[32],
                                    const uint8_t *msg, size_t msg_len,
                                    bsspeke_client_ctx *client);

@@ -26,12 +26,12 @@
 
 /*
 For Emscripten compilation to Javascript use the following:
-./emcc bsspeke.c monocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH
+emcc bsspeke.c monocypher.c -s EXPORT_ALL=1 -s EXPORTED_FUNCTIONS=_malloc,_free -s EXPORTED_RUNTIME_METHODS=ccall -s ALLOW_MEMORY_GROWTH -s EXPORT_ES6=1 -s MODULARIZE=1 -o EmccBsspeke.js
 
 This will export all functions with the macro EMSCRIPTEN_KEEPALIVE, free and
 malloc, and the emscripten ccall. If you want to shorten the list of exported
 functions and the file size, you can remove some macros from function
-definitions.
+definitions. Add -O3 flag for release build
 */
 #if defined(EMSCRIPTEN)
 #include "syscall.h"
@@ -410,13 +410,19 @@ int bsspeke_client_generate_master_key(
 
 #ifdef EMSCRIPTEN
 EMSCRIPTEN_KEEPALIVE
+uint8_t *
+#else
+void
 #endif
-void bsspeke_client_generate_hashed_key(
+bsspeke_client_generate_hashed_key(
     uint8_t k[32],
     const uint8_t *msg, size_t msg_len,
     bsspeke_client_ctx *client)
 {
     crypto_blake2b_keyed(k, 32, client->K_password, 32, msg, msg_len);
+#ifdef EMSCRIPTEN
+    return (uint8_t *)k;
+#endif
 }
 
 void bsspeke_client_generate_internal_key(
