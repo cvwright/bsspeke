@@ -1,0 +1,8 @@
+python/include
+python/_bsspeke*
+python/tmp.h
+
+*.o
+*.a
+EmccBsspeke.*
+demo
